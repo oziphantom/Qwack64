@@ -34,10 +34,17 @@ kEntity .block
 	bat = $03
 	ghost = $04
 	spider = $05
+	fish = $06
 .bend
 
 kLevelSizeMax = kTileXCount*kTileYCount
 
+kFishLimits .block
+	minY = 250-21-(8*10)
+	startTwo = 250-21-(8*9) ; 165
+	startThree = 250-21-(8*8) ; 189
+	maxY = 251
+.bend
 
 sGameData .struct 
 lives .byte 3
@@ -1593,7 +1600,7 @@ _l	lda (EntityDataPointer),y
 	sta $6
 	lda (EntityDataPointer),y
 	clc
-	adc #24 + 8 - 18 ; + 24 for border, + 8 to get middle of block - 12 to get to start of sprite
+	adc #24 - 15 ; + 24 for border, + 8 to get middle of block - 12 to get to start of sprite
 	sta $d002,x
 	iny
 	txa
@@ -1670,15 +1677,19 @@ _active
 	jsr CheckEntAgainstTile
 	ldx CurrentEntity
 	lda EntityData.type,x
-	cmp #5
+	cmp # kEntity.spider
 	beq _spider
-	cmp #3
+	cmp # kEntity.fish
+	beq _fish
+	cmp # kEntity.bat
 	bne _notBat
 	dec $8
 	lda DirectionYLUT+3 ; down Y
 	sta $fd
 	jsr CheckEntAgainstTile
 	jmp _notBat
+_fish
+	jmp _fishFunc
 _spider
 	lda EntityData.entState,x
 	beq _spiderCheckBelow
@@ -1709,7 +1720,7 @@ _spiderNoMove
 _notBat	
 	ldx $6	
 	ldy $7	
-	lda EntityData.direction,x	
+		
 	beq _right	
 	cmp #1	
 	beq _up	
@@ -1779,6 +1790,53 @@ _next
 	ldx CurrentEntity	
 	jmp _c
 
+_fishFunc
+	dec EntityData.movTimer,x
+	lda EntityData.movTimer,x
+	bpl _next
+	lda $d003,x
+	cmp # kFishLimits.startTwo
+	bcs _fNext
+	ldy #2
+	jmp _fishFound
+_fNext
+	cmp #kFishLimits.startThree
+	bcs _fLast
+	ldy #1
+	jmp _fishFound
+_fLast
+	ldy #0
+_fishFound	
+;	sty $fc ; fish delta	
+	tya
+	sta EntityData.movTimer,x
+	lda EntityData.direction,x
+	cmp #1
+	bne _fishDown
+	lda #128+80
+	sta kVectors.spr1ID,x
+	lda $d003,x
+	sec
+	sbc #1
+	sta $d003,x
+	cmp # kFishLimits.minY
+	bcs _next
+	lda #3
+	sta EntityData.direction,x
+	jmp _next
+	
+_fishDown
+	lda #128+84
+	sta kVectors.spr1ID,x
+	lda $d003,x
+	clc
+	adc #1
+	sta $d003,x
+	cmp # kFishLimits.maxY
+	bcc _next
+	lda #1
+	sta EntityData.direction,x
+	jmp _next
 
 CheckEntAgainstTile
 	lda $d002,y	
@@ -1834,8 +1892,8 @@ SetNextEntDir
 	sta EntityData.direction,x
 	rts
 	
-EntitySpriteColours 	.byte 4,15,10,14,15,5
-EntitySpriteStartFrame 	.byte 128+24,128+32,128+40,128+48,128+56,128+64
+EntitySpriteColours 	.byte 4,15,10,14,15,5,3
+EntitySpriteStartFrame 	.byte 128+32,128+40,128+48,128+56,128+64,128+72,128+80
 
 IndexToORLUT 	.byte 1,2,4,8,16,32,64,128
 IndexToANDLUT 	.byte 254,253,251,247,239,223,191,127
