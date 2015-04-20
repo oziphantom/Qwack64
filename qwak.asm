@@ -42,7 +42,7 @@ kLevelSizeMax = kTileXCount*kTileYCount
 kFishLimits .block
 	minY = 250-21-(8*10)
 	startTwo = 250-21-(8*9) ; 165
-	startThree = 250-21-(8*8) ; 189
+	startThree = 250-21-(8*7) ; 189
 	maxY = 251
 .bend
 
@@ -1599,8 +1599,9 @@ _l	lda (EntityDataPointer),y
 	sta $d003,x
 	sta $6
 	lda (EntityDataPointer),y
+	and #$f0
 	clc
-	adc #24 - 15 ; + 24 for border, + 8 to get middle of block - 12 to get to start of sprite
+	adc #24 - 4
 	sta $d002,x
 	iny
 	txa
@@ -1683,6 +1684,7 @@ _active
 	beq _fish
 	cmp # kEntity.bat
 	bne _notBat
+	;bat
 	dec $8
 	lda DirectionYLUT+3 ; down Y
 	sta $fd
@@ -1720,7 +1722,7 @@ _spiderNoMove
 _notBat	
 	ldx $6	
 	ldy $7	
-		
+	lda EntityData.direction,x		
 	beq _right	
 	cmp #1	
 	beq _up	
@@ -1794,31 +1796,32 @@ _fishFunc
 	dec EntityData.movTimer,x
 	lda EntityData.movTimer,x
 	bpl _next
-	lda $d003,x
+	lda $d003,y
 	cmp # kFishLimits.startTwo
 	bcs _fNext
-	ldy #2
+	ldy #4
 	jmp _fishFound
 _fNext
 	cmp #kFishLimits.startThree
 	bcs _fLast
-	ldy #1
+	ldy #2
 	jmp _fishFound
 _fLast
 	ldy #0
 _fishFound	
 ;	sty $fc ; fish delta	
 	tya
+	ldy $7 ; restore y to ent num x2
 	sta EntityData.movTimer,x
 	lda EntityData.direction,x
 	cmp #1
 	bne _fishDown
 	lda #128+80
 	sta kVectors.spr1ID,x
-	lda $d003,x
+	lda $d003,y
 	sec
 	sbc #1
-	sta $d003,x
+	sta $d003,y
 	cmp # kFishLimits.minY
 	bcs _next
 	lda #3
@@ -1828,10 +1831,10 @@ _fishFound
 _fishDown
 	lda #128+84
 	sta kVectors.spr1ID,x
-	lda $d003,x
+	lda $d003,y
 	clc
 	adc #1
-	sta $d003,x
+	sta $d003,y
 	cmp # kFishLimits.maxY
 	bcc _next
 	lda #1
@@ -1899,7 +1902,7 @@ IndexToORLUT 	.byte 1,2,4,8,16,32,64,128
 IndexToANDLUT 	.byte 254,253,251,247,239,223,191,127
 ; 0 = right, 1 = up, 2 = left, 3 = down
 DirectionXLUT	.byte 6,	24-12,	25,		24-12
-DirectionYLUT	.byte 50-13,48,		50-13,	50-22
+DirectionYLUT	.byte 50-13,48,		50-13,	50-22 ; raw sprite Y offsets
 NextDirectionLUT
 .byte 3,3,1,1,0,0,0,0 ; heli
 .byte 0,0,0,0,0,0,0,0 ; spring
