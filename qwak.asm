@@ -46,6 +46,13 @@ kFishLimits .block
 	maxY = 251
 .bend
 
+kDirections .block
+	right = 0
+	up = 1
+	left = 2
+	down = 3
+.bend
+
 sGameData .struct 
 lives .byte 3
 flowers .byte 0
@@ -1672,7 +1679,7 @@ _active
 	sta $fd
 	lda DirectionXLUT,x
 	sta $fe
-	ldy $7
+;	ldy $7
 	lda #0
 	sta $8
 	jsr CheckEntAgainstTile
@@ -1682,6 +1689,8 @@ _active
 	beq _spider
 	cmp # kEntity.fish
 	beq _fish
+	cmp # kEntity.spring
+	beq _spring
 	cmp # kEntity.bat
 	bne _notBat
 	;bat
@@ -1692,6 +1701,8 @@ _active
 	jmp _notBat
 _fish
 	jmp _fishFunc
+_spring
+    jmp _springFunc
 _spider
 	lda EntityData.entState,x
 	beq _spiderCheckBelow
@@ -1841,6 +1852,65 @@ _fishDown
 	sta EntityData.direction,x
 	jmp _next
 
+; x = ent number
+; y = ent number * 2
+_springFunc
+	lda EntityData.movTimer,x
+	sec 
+	sbc #1
+	beq _move
+	sta EntityData.movTimer,x
+	jmp _next
+_move
+	lda #3
+	sta EntityData.movTimer,x
+; check down
+	lda DirectionYLUT + kDirections.down
+	sta $fd
+	lda DirectionXLUT + kDirections.down
+	sta $fe
+	lda #0
+	sta $8
+	jsr CheckEntAgainstTile
+	lda $8
+	bne _resetJump
+	lda DirectionYLUT + kDirections.up
+	sta $fd
+	lda DirectionXLUT + kDirections.up
+	sta $fe
+	jsr CheckEntAgainstTile
+	lda $8
+	bne _startFall
+	lda EntityData.entState,x
+	cmp # SinJumpMax
+	bcc _notOverFlow
+	bcs _springStore
+_resetJump
+	ldx $6
+	ldy $7
+	lda # 0
+	beq _springStore
+_startFall
+	ldx $6
+	ldy $7
+	lda # SinJumpFall
+	bne _springStore
+_notOverFlow
+	clc
+	adc #1
+_springStore
+	sta EntityData.entState,x	
+	tax
+	lda	$d003,y
+	clc
+	adc SinJumpTable,x
+	sta $d003,y
+	lda $d002,y
+	clc
+	adc #2
+	sta $d002,y
+	jmp _next
+	
 CheckEntAgainstTile
 	lda $d002,y	
 	tax	
@@ -1910,6 +1980,14 @@ NextDirectionLUT
 .byte 2,2,0,0,0,0,0,0 ; bat
 .byte 3,0,1,2,0,0,0,0 ; ghost
 .byte 3,3,1,1,0,0,0,0 ; spider
+.byte 0,0,0,0,0,0,0,0 ; fish - not used
+.byte 0,0,0,0,0,0,0,0 ; flying thing - not used
+
+SinJumpTable
+.char -8, -6, -5, -4, -5, -3, -4, -3, -2, -3, -1, -2, -1, 0, -1, -1, 0 
+SinJumpFall = * - SinJumpTable 
+.char 1, 2, 1, 3, 2, 3, 4, 3, 5, 4, 5, 6, 5, 6, 6, 7, 8, 8 
+SinJumpMax = * - SinJumpTable - 1
 
 *= $2000
 fileSprites ;
