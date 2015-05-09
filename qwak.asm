@@ -1888,11 +1888,21 @@ _move
 _resetJump
 	ldx $6
 	ldy $7
+	lda EntityData.direction,x
+	cmp #128
+	bcs _springSpeedSkip
+	clc
+	adc #64
+	sta EntityData.direction,x
+_springSpeedSkip
 	lda # 0
 	beq _springStore
 _startFall
 	ldx $6
 	ldy $7
+	lda EntityData.entState,x
+	cmp # SinJumpFall
+	bcs _notOverFlow
 	lda # SinJumpFall
 	bne _springStore
 _notOverFlow
@@ -1905,9 +1915,63 @@ _springStore
 	clc
 	adc SinJumpTable,x
 	sta $d003,y
+	; check left/right
+	ldx $6
+	lda EntityData.direction,x
+	and #128+64 
+	cmp #128
+	beq _springMaxSpeed
+	lda #1
+	sta $9
+	bne _springCheck
+_springMaxSpeed
+	lda #2
+	sta $9
+_springCheck	
+	lda EntityData.direction,x
+	and #15 ; mask of the upper bits 
+	cmp # kDirections.left
+	bne _springRight
+	; check left
+	lda DirectionYLUT + kDirections.left
+	sta $fd
+	lda DirectionXLUT + kDirections.left
+	sta $fe
+	lda #0
+	sta $8
+	jsr CheckEntAgainstTile
+	lda $8 
+	beq _moveLeft
+	lda # kDirections.right + 64
+	ldx $6
+	sta EntityData.direction,x
+	jmp _moveRight
+_springRight
+	lda DirectionYLUT + kDirections.right
+	sta $fd
+	lda DirectionXLUT + kDirections.right
+	sta $fe
+	lda #0
+	sta $8
+	jsr CheckEntAgainstTile
+	lda $8 
+	beq _moveRight
+	lda # kDirections.left + 64
+	ldx $6
+	sta EntityData.direction,x
+	jmp _moveLeft
+_moveRight	
+	ldy $7
 	lda $d002,y
 	clc
-	adc #2
+	adc $9
+	sta $d002,y
+	jmp _next
+_moveLeft
+	ldy $7
+	lda $d002,y
+	sec
+	sbc $9
 	sta $d002,y
 	jmp _next
 	
