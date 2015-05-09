@@ -35,6 +35,7 @@ kEntity .block
 	ghost = $04
 	spider = $05
 	fish = $06
+	circler = $07
 .bend
 
 kLevelSizeMax = kTileXCount*kTileYCount
@@ -1685,12 +1686,14 @@ _active
 	jsr CheckEntAgainstTile
 	ldx CurrentEntity
 	lda EntityData.type,x
-	cmp # kEntity.spider
+	cmp # kEntity.spider ; this probably should be done BEFOR above checks
 	beq _spider
 	cmp # kEntity.fish
 	beq _fish
 	cmp # kEntity.spring
 	beq _spring
+	cmp # kEntity.circler
+	beq _circler
 	cmp # kEntity.bat
 	bne _notBat
 	;bat
@@ -1703,6 +1706,8 @@ _fish
 	jmp _fishFunc
 _spring
     jmp _springFunc
+_circler 
+	jmp _circlerFunc
 _spider
 	lda EntityData.entState,x
 	beq _spiderCheckBelow
@@ -1975,6 +1980,37 @@ _moveLeft
 	sta $d002,y
 	jmp _next
 	
+_circlerFunc
+	lda EntityData.movTimer,x
+	sec 
+	sbc #1
+	beq _cirActive
+	sta EntityData.movTimer,x
+	jmp _next
+_cirActive
+	lda #4
+	sta EntityData.movTimer,x
+	lda EntityData.entState,x
+	tax
+	lda $d002,y
+	clc
+	adc CircleJumpTableStart,x
+	sta $d002,y
+	lda $d003,y
+	clc
+	adc CircleJumpTableStart + ( CircleJumpTableCount / 4) + 1,x
+	sta $d003,y
+	ldx $6
+	lda EntityData.entState,x
+	clc
+	adc #1
+	cmp # CircleJumpTableCount
+	bne _cirStore
+	lda #0
+_cirStore
+	sta EntityData.entState,x
+	jmp _next
+	
 CheckEntAgainstTile
 	lda $d002,y	
 	tax	
@@ -2029,8 +2065,8 @@ SetNextEntDir
 	sta EntityData.direction,x
 	rts
 	
-EntitySpriteColours 	.byte 4,15,10,14,15,5,3
-EntitySpriteStartFrame 	.byte 128+32,128+40,128+48,128+56,128+64,128+72,128+80
+EntitySpriteColours 	.byte 4,15,10,14,15,5,3,14
+EntitySpriteStartFrame 	.byte 128+32,128+40,128+48,128+56,128+64,128+72,128+80,128+88
 
 IndexToORLUT 	.byte 1,2,4,8,16,32,64,128
 IndexToANDLUT 	.byte 254,253,251,247,239,223,191,127
@@ -2048,11 +2084,23 @@ NextDirectionLUT
 .byte 0,0,0,0,0,0,0,0 ; flying thing - not used
 
 SinJumpTable
-.char -8, -6, -5, -4, -5, -3, -4, -3, -2, -3, -1, -2, -1, 0, -1, -1, 0 
+.char -8, -6, -5, -4, -5, -3
+.char -4, -3, -2, -3, -1, -2, -1, 0, -1, -1, 0 
 SinJumpFall = * - SinJumpTable 
-.char 1, 2, 1, 3, 2, 3, 4, 3, 5, 4, 5, 6, 5, 6, 6, 7, 8, 8 
+.char  1,  2,  1,  3,  2,  3,  4  
+.char  3,  5,  4,  5,  6,  5, 6,  6,  7, 8, 8 
 SinJumpMax = * - SinJumpTable - 1
 
+;CircleJumpTableStart 
+;.char -1,-2,-2,-3,-3,-4,-5
+;.char 5,4,3,3,2,2,1
+;CircleJumpTableCount = * - CircleJumpTableStart 
+;.char -1,-2,-2,-3,-3,-4,-5
+
+CircleJumpTableStart
+.char 5,4,3,3,2,2,1,-1,-2,-2,-3,-3,-4,-5,-5,-4,-3,-3,-2,-2,-1,1,2,2,3,3,4,5
+CircleJumpTableCount = * - CircleJumpTableStart 
+.char 5,4,3,3,2,2,1,-1,-2,-2,-3,-3,-4,-5
 *= $2000
 fileSprites ;
 .binary "sprites.bin"		
