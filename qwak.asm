@@ -54,6 +54,12 @@ kDirections .block
 	down = 3
 .bend
 
+kPlayerParams .block
+	jumpStartDelta = 255-1
+	jumpDeltaAccum = 19
+	jumpDeltaAccumFloat = 2
+.bend
+
 sGameData .struct 
 lives .byte 3
 flowers .byte 0
@@ -74,7 +80,7 @@ exitY .byte 0
 
 sTimerTickDowns .struct
 dissBlocks .byte 0
-playerJump .byte 0
+playerAnim .byte 0
 .ends
 
 sPlayerData .struct
@@ -87,6 +93,12 @@ hasJumped .byte 0
 isFalling .byte 0
 floatTimer .byte 0
 facingRight .byte 0
+yDeltaAccum .word 0
+baseSprite .byte 0
+frameOffset .byte 0
+frameCount .byte 0
+frameTimer .byte 0
+movingLR .byte 0
 .ends
 
 sEntityData .struct
@@ -189,19 +201,7 @@ start
 		jmp -		
 +		jsr updateTickdowns
 		jsr joyToPlayerDelta
-		; gravity
-		lda PlayerData.hasJumped
-		bne _checkNoInput
-		lda checkSpriteToCharData.yDeltaCheck
-		bmi _nograv
-_grav	lda #1
-		sta checkSpriteToCharData.yDeltaCheck
-		jmp _nograv
-_checkNoInput		
-		lda joyUp
-		ora joyDown
-		beq _grav
-_nograv	jsr checkSpriteToCharCollision
+		jsr checkSpriteToCharCollision
 		jsr checkQwakOnDoor
 		jsr checkOnDissTile
 		lda $d000
@@ -212,6 +212,7 @@ _nograv	jsr checkSpriteToCharCollision
 		clc
 		adc checkSpriteToCharData.yDeltaCheck
 		sta $d001
+		jsr updatePlayerAnim
 		jsr updateEntities
 		jmp -
 		
@@ -220,71 +221,165 @@ joyToPlayerDelta
 		lda #0
 		sta checkSpriteToCharData.xDeltaCheck
 		sta checkSpriteToCharData.yDeltaCheck
+; Check Left and Right
 		lda joyLeft
 		beq _cr
-		lda #0
-		jsr changePlayerDir
 		lda #$ff
 		sta checkSpriteToCharData.xDeltaCheck
+		ldx PlayerData.movingLR
+		bne _cu
+		lda #1
+		sta PlayerData.movingLR
+		lda #0
+		jsr changePlayerDir
 		jmp _cu
 _cr		lda joyRight
 		beq _cu
 		lda #1		
 		sta checkSpriteToCharData.xDeltaCheck
+		ldx PlayerData.movingLR
+		bne _cu
+		sta PlayerData.movingLR
 		jsr changePlayerDir		
-_cu		lda joyUp
-		beq _cb
-		lda PlayerData.hasJumped 
-		beq _startJump
-		lda PlayerData.isFalling
-		bne _jumpFall
-		lda TickDowns.playerJump
-		bne _upe ; still able to jump
+; Check Up and Down		
+_cu		lda joyLeft
+		ora joyRight
+		bne _noChangeLR
+		; joy l r = not movement
+		lda PlayerData.movingLR
+		beq _noChangeLR
+		; and we were mopving
+		lda #0
+		sta PlayerData.movingLR   ; then stop moveing LR
+		lda PlayerData.facingRight ; change anim to still version
+		jsr changePlayerDir
+		
+_noChangeLR		
+		lda joyUp
+		beq _noUp
+		lda PlayerData.hasJumped  	; have we already jumped
+		beq _startJump				; no then jump
+		lda PlayerData.isFalling	; have we started falling
+		bne _jumpFall				; yes handle the fall case then
+		lda PlayerData.onGround		; or we on the ground and thus we have not let go since last jump
+		bne _cb						; if on gound then don't move more
+		; pressing up whilst we jump
+		ldx # kJumpIndexs.normal
+		jsr incPlayerYDeltaAndReturn
+		bne _upe 					; still able to jump
 		lda #1
-		sta PlayerData.isFalling
-_upe	lda #$ff
-		sta checkSpriteToCharData.yDeltaCheck
+		sta PlayerData.isFalling	; start the fall
+_upe	sta checkSpriteToCharData.yDeltaCheck
 		rts		
 _startJump
-		lda PlayerData.onGround
-		beq _fall
+		lda PlayerData.onGround		; have we trided to jump while in mid air
+		beq _cb						; ignore it
 		lda #1
-		sta PlayerData.hasJumped 
+		sta PlayerData.hasJumped 	; we are jumping
 		lda #0
-		sta PlayerData.isFalling
-		sta PlayerData.onGround
-		ldx PlayerData.hasSpring
-		lda PlayerJumpLUT,x
-		sta TickDowns.playerJump
-		lda # kTimers.floatTimer
+		sta PlayerData.isFalling	; not falling
+		sta PlayerData.onGround 	; not on the ground
+		sta PlayerData.yDeltaAccum	; set the Y jump accleration
+		lda # kTimers.floatTimer	; reset the float timer
 		sta PlayerData.floatTimer
-		jmp _upe
+		lda # kPlayerParams.jumpStartDelta	; set the other half of jump accleration
+		sta PlayerData.yDeltaAccum + 1
+		jmp _upe					; start jumping
 _jumpFall	
-		lda PlayerData.canFloat
-		beq _fall
-		lda PlayerData.floatTimer	
-		beq _fall	
+		lda PlayerData.canFloat		; if don't have the spring, nothing to do		
+		beq _cb
+		lda PlayerData.floatTimer	; time left of float clock
+		beq _cb	
 		dec PlayerData.floatTimer	
-		lda #0	
-		sta checkSpriteToCharData.yDeltaCheck	
-		rts	
+		ldx # kJumpIndexs.floaty
+		bne _incD
 			
-_cb		lda joyDown
-		beq _exit
-_fall	
-		lda #01
+_noUp	lda PlayerData.onGround	
+		and PlayerData.hasJumped	
+		beq _cb	
+		lda #0	
+		sta PlayerData.hasJumped	
+_cb		lda PlayerData.onGround		; are we on the ground	
+		bne _ong
+		ldx # kJumpIndexs.normal
+_incD	jsr incPlayerYDeltaAndReturn	; no, we are in gravity so fall
 		sta checkSpriteToCharData.yDeltaCheck
-_exit	rts
+		rts
+_ong	lda #1
+		sta checkSpriteToCharData.yDeltaCheck
+		rts
 
 changePlayerDir
 		sta PlayerData.facingRight
 		tax
-		lda PlayerSprLUT,x
-		sta kVectors.spr0ID
+		lda PlayerData.movingLR
+		beq _still
+		inx  ; THIS IS BAD AND A HACK
+		inx
+_still	jsr setPlayerAnimeTo
+		rts
+	
+incPlayerYDeltaAndReturn
+		lda PlayerData.yDeltaAccum
+		clc
+		adc PlayerJumpLUT,x
+		sta PlayerData.yDeltaAccum
+		lda PlayerData.yDeltaAccum + 1
+		adc #0
+		sta PlayerData.yDeltaAccum + 1
 		rts
 		
-PlayerJumpLUT .byte kTimers.jumpUpValue, kTimers.jumpUpSpringValue
-PlayerSprLUT  .byte $84,$80
+setPlayerAnimeTo
+		lda PlayerSprLUT,x
+		sta PlayerData.baseSprite
+		sta kVectors.spr0ID
+		lda PlayerFrameCountLUT,x
+		sta PlayerData.frameCount
+		lda PlayerAnimTimer,x
+		sta PlayerData.frameTimer
+		sta TickDowns.playerAnim
+		lda #0
+		sta PlayerData.frameOffset
+		rts
+		
+updatePlayerAnim
+		lda PlayerData.frameCount
+		cmp #2
+		bcc _skip
+		lda TickDowns.playerAnim
+		beq _itTime
+_skip	rts
+_itTime
+		lda PlayerData.frameOffset
+		clc
+		adc #1
+		cmp PlayerData.frameCount
+		bcc _store
+		lda #0
+_store	sta PlayerData.frameOffset
+		clc
+		adc PlayerData.baseSprite
+		sta kVectors.spr0ID
+		lda PlayerData.frameTimer
+		sta TickDowns.playerAnim
+		rts 
+				
+kJumpIndexs .block
+	normal = 0
+	floaty = 1
+.bend
+kPlayerAnimsIndex .block
+	standLeft = 0
+	standRight = 1
+	standWalkLeft = 2
+	standWalkRight = 3
+.bend
+
+PlayerJumpLUT .byte kPlayerParams.jumpDeltaAccum, kPlayerParams.jumpDeltaAccumFloat
+						; Left  Right  Walk L	Walk R
+PlayerSprLUT  		.byte $84  ,$80		,$8c	,$88
+PlayerFrameCountLUT	.byte 1	   ,1		,4		,4
+PlayerAnimTimer		.byte 255  ,255		,8		,8
 
 joyLeft  .byte 0
 joyRight .byte 0
@@ -800,9 +895,11 @@ _Y1
 _YFF
 	lda #1
 	sta PlayerData.onGround
+	sta PlayerData.yDeltaAccum
 	lda #0
-	sta PlayerData.hasJumped 
+;	sta PlayerData.hasJumped 
 	sta PlayerData.isFalling
+	sta PlayerData.yDeltaAccum + 1
 _noOnGround
 	lda #$0
 	sta checkSpriteToCharData.yDeltaCheck
