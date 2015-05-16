@@ -1,3 +1,5 @@
+.include "qwak_structs.asm"
+
 kVectors .block
 	charBase = $0400
 	spr0ID = charBase+1016
@@ -58,61 +60,38 @@ kPlayerParams .block
 	jumpDeltaAccumFloat = 2
 .bend
 
-sGameData .struct 
-lives .byte ?
-flowers .byte ?
-score .byte ?,?,?,?,?,?
-high .byte ?,?,?,?,?,?
-currLevel .byte ?
-exitOpen .byte ?
-.ends
+kJumpIndexs .block
+	normal = 0
+	floaty = 1
+.bend
 
-sLevelData .struct
-numKeys .byte ?
-totalKeys .byte ?
-playerX .byte ?
-playerY .byte ?
-exitX .byte ?
-exitY .byte ?
-.ends
+kPlayerAnimsIndex .block
+	standLeft = 0
+	standRight = 1
+	standWalkLeft = 2
+	standWalkRight = 3
+.bend
 
-sTimerTickDowns .struct
-dissBlocks .byte ?
-playerAnim .byte ?
-.ends
-
-sPlayerData .struct
-dead .byte ?
-hasShield .byte ?
-canFloat .byte ?
-hasSpring .byte ?
-onGround .byte ?
-hasJumped .byte ?
-isFalling .byte ?
-floatTimer .byte ?
-facingRight .byte ?
-yDeltaAccum .word ?
-baseSprite .byte ?
-frameOffset .byte ?
-frameCount .byte ?
-frameTimer .byte ?
-movingLR .byte ?
-.ends
-
-sEntityData .struct
-type		.fill 7 ; .byte ?,?,?,?,?,?,?
-direction	.fill 7 ;.byte ?,?,?,?,?,?,?
-active		.fill 7 ;.byte ?,?,?,?,?,?,?
-movTimer	.fill 7 ;.byte ?,?,?,?,?,?,?
-animTimer	.fill 7 ;.byte ?,?,?,?,?,?,?
-originalY	.fill 7 ;.byte ?,?,?,?,?,?,?
-entState	.fill 7 ;.byte ?,?,?,?,?,?,?
-.ends
-
-sCSTCCParams .struct	
-xDeltaCheck .byte ? ; pixels
-yDeltaCheck .byte ? ; pixels
-.ends
+; kStatusBorderChars		
+kSBC .block
+	M	= 191
+	TL	= 203
+	T	= 204
+	TR	= 206
+	L	= 205
+	R	= 207
+	BL	= 229
+	B	= 230
+	BR	= 231
+	Col = 15
+	QWAKT = 208
+	QWAKB = 214
+	Score = 220
+	High = 226
+	QwakP = 232
+	X = 190
+	Flower = 236
+.bend
 
 playerTempCol	= $d2
 ZPTemp			= $d3
@@ -172,8 +151,6 @@ PlayerData .dstruct sPlayerData
 TICK_DOWN_START = *
 TickDowns .dstruct sTimerTickDowns
 TICK_DOWN_END = *
-
-levelNum .byte ?
 
 playerTile1			.byte ?
 playerTile2			.byte ?
@@ -451,17 +428,6 @@ _store	sta PlayerData.frameOffset
 		lda PlayerData.frameTimer
 		sta TickDowns.playerAnim
 		rts 
-				
-kJumpIndexs .block
-	normal = 0
-	floaty = 1
-.bend
-kPlayerAnimsIndex .block
-	standLeft = 0
-	standRight = 1
-	standWalkLeft = 2
-	standWalkRight = 3
-.bend
 
 PlayerJumpLUT .byte kPlayerParams.jumpDeltaAccum, kPlayerParams.jumpDeltaAccumFloat
 						; Left	Right  Walk L	Walk R
@@ -1109,11 +1075,11 @@ _next
 	rts
 
 exitFunc	
-	lda levelNum
+	lda GameData.currLevel
 	clc 
 	adc #1
 	and #3
-	sta levelNum
+	sta GameData.currLevel
 	lda #0
 	sta GameData.exitOpen
 	pla
@@ -1424,54 +1390,7 @@ _notsafe
 _exitSafe
 	clc
 _exit
-	rts 
-		
-; kStatusBorderChars		
-kSBC .block
-	M	= 191
-	TL	= 203
-	T	= 204
-	TR	= 206
-	L	= 205
-	R	= 207
-	BL	= 229
-	B	= 230
-	BR	= 231
-	Col = 15
-	QWAKT = 208
-	QWAKB = 214
-	Score = 220
-	High = 226
-	QwakP = 232
-	X = 190
-	Flower = 236
-.bend
-
-statusLine0 .byte kSBC.TL,kSBC.T,kSBC.T,kSBC.T,kSBC.T,kSBC.T,kSBC.T,kSBC.TR	
-statusLine1 .byte kSBC.L ,kSBC.M,kSBC.M,kSBC.M,kSBC.M,kSBC.M,kSBC.M,kSBC.R	
-statusLine2 .byte kSBC.BL,kSBC.B,kSBC.B,kSBC.B,kSBC.B,kSBC.B,kSBC.B,kSBC.BR	
-statusLine3 .byte kSBC.L ,kSBC.QWAKT,kSBC.QWAKT+1,kSBC.QWAKT+2,kSBC.QWAKT+3,kSBC.QWAKT+4,kSBC.QWAKT+5,kSBC.R	
-statusLine4 .byte kSBC.L ,kSBC.QWAKB,kSBC.QWAKB+1,kSBC.QWAKB+2,kSBC.QWAKB+3,kSBC.QWAKB+4,kSBC.QWAKB+5,kSBC.R	
-statusLine5 .byte kSBC.L ,kSBC.Score,kSBC.Score+1,kSBC.Score+2,kSBC.Score+3,kSBC.Score+4,kSBC.Score+5,kSBC.R
-statusLine6 .byte kSBC.L ,kSBC.M,kSBC.High,kSBC.High+1,kSBC.High+2,kSBC.High,kSBC.M,kSBC.R
-statusLine7 .byte kSBC.L ,kSBC.M,kSBC.QwakP,kSBC.QwakP+1,kSBC.M,kSBC.M,kSBC.M,kSBC.R	
-statusLine8 .byte kSBC.L ,kSBC.M,kSBC.QwakP+2,kSBC.QwakP+3,kSBC.X,kSBC.M,kSBC.M,kSBC.R
-statusLine9 .byte kSBC.L ,kSBC.M,kSBC.Flower,kSBC.Flower+1,kSBC.M,kSBC.M,kSBC.M,kSBC.R	
-statusLine10 .byte kSBC.L ,kSBC.M,kSBC.Flower+2,kSBC.Flower+3,kSBC.X,kSBC.M,kSBC.M,kSBC.R
-
-statusColour0 .byte kSBC.Col,kSBC.Col,kSBC.Col,kSBC.Col,kSBC.Col,kSBC.Col,kSBC.Col,kSBC.Col
-statusColour1 .byte kSBC.Col,kSBC.Col,kSBC.Col,kSBC.Col,kSBC.Col,kSBC.Col,kSBC.Col,kSBC.Col
-statusColour2 .byte kSBC.Col,kSBC.Col,kSBC.Col,kSBC.Col,kSBC.Col,kSBC.Col,kSBC.Col,kSBC.Col
-statusColour3 .byte kSBC.Col,1,1,1,1,1,1,kSBC.Col
-statusColour4 .byte kSBC.Col,3,3,3,3,3,3,kSBC.Col
-statusColour5 .byte kSBC.Col,3,3,3,3,3,3,kSBC.Col
-statusColour6 .byte kSBC.Col,kSBC.Col,3,3,3,3,kSBC.Col,kSBC.Col
-statusColour7 .byte kSBC.Col,kSBC.Col,kSBC.Col,kSBC.Col,kSBC.Col,kSBC.Col,kSBC.Col,kSBC.Col
-statusColour8 .byte kSBC.Col,kSBC.Col,kSBC.Col,kSBC.Col,0,kSBC.Col,kSBC.Col,kSBC.Col
-statusColour9 .byte kSBC.Col,kSBC.Col,kSBC.Col,kSBC.Col,kSBC.Col,kSBC.Col,kSBC.Col,kSBC.Col
-statusColour10 .byte kSBC.Col,kSBC.Col,13,13,0,kSBC.Col,kSBC.Col,kSBC.Col
-
-statusLines .byte 0,1,3,4,1,2,0,1,5,1,1,1,6,1,1,1,7,8,1,1,9,10,1,2	
+	rts
 	
 plotStatusArea
 	lda #<kVectors.charBase + 32 
@@ -1594,15 +1513,6 @@ _next
 	dex
 	bpl _l
 	rts
-	
-screenRowLUTLO		
-.for ue = kVectors.charBase, ue < kVectors.charBase + $400, ue = ue + 40
-.byte <ue
-.next
-screenRowLUTHi	
-.for ue = kVectors.charBase, ue < kVectors.charBase + $400, ue = ue + 40
-.byte >ue
-.next
 
 ; NumEnts followed by XXXXYYYY TTTT--DD
 ; X x tile
@@ -2594,7 +2504,41 @@ CircleJumpTableStart
 CircleJumpTableCount = * - CircleJumpTableStart	  
 .char  5, 5, 5, 5, 4, 4, 4, 3, 2, 2, 1, 1, 0
 
- 
+statusLine0 .byte kSBC.TL,kSBC.T,kSBC.T,kSBC.T,kSBC.T,kSBC.T,kSBC.T,kSBC.TR	
+statusLine1 .byte kSBC.L ,kSBC.M,kSBC.M,kSBC.M,kSBC.M,kSBC.M,kSBC.M,kSBC.R	
+statusLine2 .byte kSBC.BL,kSBC.B,kSBC.B,kSBC.B,kSBC.B,kSBC.B,kSBC.B,kSBC.BR	
+statusLine3 .byte kSBC.L ,kSBC.QWAKT,kSBC.QWAKT+1,kSBC.QWAKT+2,kSBC.QWAKT+3,kSBC.QWAKT+4,kSBC.QWAKT+5,kSBC.R	
+statusLine4 .byte kSBC.L ,kSBC.QWAKB,kSBC.QWAKB+1,kSBC.QWAKB+2,kSBC.QWAKB+3,kSBC.QWAKB+4,kSBC.QWAKB+5,kSBC.R	
+statusLine5 .byte kSBC.L ,kSBC.Score,kSBC.Score+1,kSBC.Score+2,kSBC.Score+3,kSBC.Score+4,kSBC.Score+5,kSBC.R
+statusLine6 .byte kSBC.L ,kSBC.M,kSBC.High,kSBC.High+1,kSBC.High+2,kSBC.High,kSBC.M,kSBC.R
+statusLine7 .byte kSBC.L ,kSBC.M,kSBC.QwakP,kSBC.QwakP+1,kSBC.M,kSBC.M,kSBC.M,kSBC.R	
+statusLine8 .byte kSBC.L ,kSBC.M,kSBC.QwakP+2,kSBC.QwakP+3,kSBC.X,kSBC.M,kSBC.M,kSBC.R
+statusLine9 .byte kSBC.L ,kSBC.M,kSBC.Flower,kSBC.Flower+1,kSBC.M,kSBC.M,kSBC.M,kSBC.R	
+statusLine10 .byte kSBC.L ,kSBC.M,kSBC.Flower+2,kSBC.Flower+3,kSBC.X,kSBC.M,kSBC.M,kSBC.R
+
+statusColour0 .byte kSBC.Col,kSBC.Col,kSBC.Col,kSBC.Col,kSBC.Col,kSBC.Col,kSBC.Col,kSBC.Col
+statusColour1 .byte kSBC.Col,kSBC.Col,kSBC.Col,kSBC.Col,kSBC.Col,kSBC.Col,kSBC.Col,kSBC.Col
+statusColour2 .byte kSBC.Col,kSBC.Col,kSBC.Col,kSBC.Col,kSBC.Col,kSBC.Col,kSBC.Col,kSBC.Col
+statusColour3 .byte kSBC.Col,1,1,1,1,1,1,kSBC.Col
+statusColour4 .byte kSBC.Col,3,3,3,3,3,3,kSBC.Col
+statusColour5 .byte kSBC.Col,3,3,3,3,3,3,kSBC.Col
+statusColour6 .byte kSBC.Col,kSBC.Col,3,3,3,3,kSBC.Col,kSBC.Col
+statusColour7 .byte kSBC.Col,kSBC.Col,kSBC.Col,kSBC.Col,kSBC.Col,kSBC.Col,kSBC.Col,kSBC.Col
+statusColour8 .byte kSBC.Col,kSBC.Col,kSBC.Col,kSBC.Col,0,kSBC.Col,kSBC.Col,kSBC.Col
+statusColour9 .byte kSBC.Col,kSBC.Col,kSBC.Col,kSBC.Col,kSBC.Col,kSBC.Col,kSBC.Col,kSBC.Col
+statusColour10 .byte kSBC.Col,kSBC.Col,13,13,0,kSBC.Col,kSBC.Col,kSBC.Col
+
+statusLines .byte 0,1,3,4,1,2,0,1,5,1,1,1,6,1,1,1,7,8,1,1,9,10,1,2	
+	
+screenRowLUTLO		
+.for ue = kVectors.charBase, ue < kVectors.charBase + $400, ue = ue + 40
+.byte <ue
+.next
+screenRowLUTHi	
+.for ue = kVectors.charBase, ue < kVectors.charBase + $400, ue = ue + 40
+.byte >ue
+.next
+
 *= $2000
 fileSprites ;
 .binary "sprites.bin"		
