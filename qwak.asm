@@ -41,10 +41,8 @@ kEntity .block
 kLevelSizeMax = kTileXCount*kTileYCount
 
 kFishLimits .block
-	minY = 250-21-(8*10)
-	startTwo = 250-21-(8*9) ; 165
-	startThree = 250-21-(8*7) ; 189
-	maxY = 251
+	startTwo = 250-21-(8*6) ; 165
+	maxY = 255-8-8
 .bend
 
 kDirections .block
@@ -180,15 +178,12 @@ start
 		sta $d015
 		lda #255
 		sta $d01c
-		lda #100
-		sta $d000
-		sta $d001
 		lda #11
 		sta $d025
 		lda #1
 		sta $d026
 		lda #7
-		sta $d027
+		sta mplex.sprc
 		;lda #%00010000
 		;sta $d011
 		; clear Mplex 
@@ -218,12 +213,7 @@ start
 		dex
 		bpl -
 		; main loop
--		;lda $d012	
-		;bne -	
-		;lda $d011	
-		;cmp #80 
-		;beq -	
-		lda mplex.lsbtod	
+-		lda mplex.lsbtod	
 		beq -	
 		dec mplex.lsbtod	
 ;	inc $d020
@@ -1951,52 +1941,52 @@ _fishFunc
 	dec EntityData.movTimer,x
 	lda EntityData.movTimer,x
 	bpl _next
+	lda #4
+	sta EntityData.movTimer,x
+	
+	inc EntityData.entState,x
+	lda EntityData.direction,x
+	cmp # kDirections.up
+	bne _fishDown
+	;fish up
+	lda #128+80
+	sta mplex.sprp+1,x ; will need to change to animation type
 	lda mplex.ypos+1,x
 	cmp # kFishLimits.startTwo
-	bcs _fNext
-	ldy #4
-	jmp _fishFound
-_fNext
-	cmp #kFishLimits.startThree
-	bcs _fLast
-	ldy #2
-	jmp _fishFound
-_fLast
-	ldy #0
-_fishFound	
-;	sty $fc ; fish delta	
-	tya
-	sta EntityData.movTimer,x
-	lda EntityData.direction,x
-	cmp #1
-	bne _fishDown
-	lda #128+80
-	sta mplex.sprp+1,x
-	lda mplex.ypos+1,x
-	sec
-	sbc #1
-	sta mplex.ypos+1,x
-	cmp # kFishLimits.minY
-	bcs _next
-	lda #3
+	bcc _fupNormal
+	lda #0
+	sta EntityData.entState,x
+	jmp _moveFish
+_fupNormal	
+	lda EntityData.entState,x
+	cmp #kSinJumpFall
+	bcc _moveFish
+	lda # kDirections.down
 	sta EntityData.direction,x
-	jmp _next
-	
+	jmp _moveFish
 _fishDown
 	lda #128+84
 	sta mplex.sprp+1,x
+	lda EntityData.entState,x
+	cmp #kSinJumpMax
+	bcc _checkMaxY
+	dec EntityData.entState,x
+_checkMaxY	
+	lda mplex.ypos+1,x
+	cmp # kFishLimits.maxY
+	bcc _movefish
+	lda # kDirections.up
+	sta EntityData.direction,x
+_moveFish	
+	lda EntityData.entState,x
+	tay
 	lda mplex.ypos+1,x
 	clc
-	adc #1
+	adc SinJumpTable,y
 	sta mplex.ypos+1,x
-	cmp # kFishLimits.maxY
-	bcc _next
-	lda #1
-	sta EntityData.direction,x
 	jmp _next
-
+	
 ; x = ent number
-; y = ent number * 2
 _springFunc
 	lda EntityData.movTimer,x
 	sec 
@@ -2152,10 +2142,6 @@ _cirStore
 	jmp _next
 	
 CheckEntAgainstTile
-;	lda $d002,y 
-;	tax 
-;	lda $d003,y 
-;	tay 
 	lda mPlex.ypos+1,x
 	tay
 	lda mPlex.xpos+1,x
