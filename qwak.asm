@@ -1382,10 +1382,10 @@ FlowerScore .byte 0,0,0,5,0,0,15,15
 KeyScore	.byte 0,0,0,2,5,0,15,15
 	
 convertXYToScreen
-	stx _off+1
+	stx TempX
 	lda screenRowLUTLO,y
 	clc
-_off adc #00 
+	adc TempX 
 	sta $fb
 	lda screenRowLUTHi,y
 	adc #00
@@ -1415,7 +1415,8 @@ _exitSafe
 _exit
 	rts 
 		
-kStatusBorderChars .block
+; kStatusBorderChars		
+kSBC .block
 	M	= 191
 	TL	= 203
 	T	= 204
@@ -1430,198 +1431,276 @@ kStatusBorderChars .block
 	QWAKB = 214
 	Score = 220
 	High = 226
+	QwakP = 232
+	X = 190
+	Flower = 236
 .bend
+
+statusLine0 .byte kSBC.TL,kSBC.T,kSBC.T,kSBC.T,kSBC.T,kSBC.T,kSBC.T,kSBC.TR	
+statusLine1 .byte kSBC.L ,kSBC.M,kSBC.M,kSBC.M,kSBC.M,kSBC.M,kSBC.M,kSBC.R	
+statusLine2 .byte kSBC.BL,kSBC.B,kSBC.B,kSBC.B,kSBC.B,kSBC.B,kSBC.B,kSBC.BR	
+statusLine3 .byte kSBC.L ,kSBC.QWAKT,kSBC.QWAKT+1,kSBC.QWAKT+2,kSBC.QWAKT+3,kSBC.QWAKT+4,kSBC.QWAKT+5,kSBC.R	
+statusLine4 .byte kSBC.L ,kSBC.QWAKB,kSBC.QWAKB+1,kSBC.QWAKB+2,kSBC.QWAKB+3,kSBC.QWAKB+4,kSBC.QWAKB+5,kSBC.R	
+statusLine5 .byte kSBC.L ,kSBC.Score,kSBC.Score+1,kSBC.Score+2,kSBC.Score+3,kSBC.Score+4,kSBC.Score+5,kSBC.R
+statusLine6 .byte kSBC.L ,kSBC.M,kSBC.High,kSBC.High+1,kSBC.High+2,kSBC.High,kSBC.M,kSBC.R
+statusLine7 .byte kSBC.L ,kSBC.M,kSBC.QwakP,kSBC.QwakP+1,kSBC.M,kSBC.M,kSBC.M,kSBC.R	
+statusLine8 .byte kSBC.L ,kSBC.M,kSBC.QwakP+2,kSBC.QwakP+3,kSBC.X,kSBC.M,kSBC.M,kSBC.R
+statusLine9 .byte kSBC.L ,kSBC.M,kSBC.Flower,kSBC.Flower+1,kSBC.M,kSBC.M,kSBC.M,kSBC.R	
+statusLine10 .byte kSBC.L ,kSBC.M,kSBC.Flower+2,kSBC.Flower+3,kSBC.X,kSBC.M,kSBC.M,kSBC.R
+
+statusColour0 .byte kSBC.Col,kSBC.Col,kSBC.Col,kSBC.Col,kSBC.Col,kSBC.Col,kSBC.Col,kSBC.Col
+statusColour1 .byte kSBC.Col,kSBC.Col,kSBC.Col,kSBC.Col,kSBC.Col,kSBC.Col,kSBC.Col,kSBC.Col
+statusColour2 .byte kSBC.Col,kSBC.Col,kSBC.Col,kSBC.Col,kSBC.Col,kSBC.Col,kSBC.Col,kSBC.Col
+statusColour3 .byte kSBC.Col,1,1,1,1,1,1,kSBC.Col
+statusColour4 .byte kSBC.Col,3,3,3,3,3,3,kSBC.Col
+statusColour5 .byte kSBC.Col,3,3,3,3,3,3,kSBC.Col
+statusColour6 .byte kSBC.Col,kSBC.Col,3,3,3,3,kSBC.Col,kSBC.Col
+statusColour7 .byte kSBC.Col,kSBC.Col,kSBC.Col,kSBC.Col,kSBC.Col,kSBC.Col,kSBC.Col,kSBC.Col
+statusColour8 .byte kSBC.Col,kSBC.Col,kSBC.Col,kSBC.Col,0,kSBC.Col,kSBC.Col,kSBC.Col
+statusColour9 .byte kSBC.Col,kSBC.Col,kSBC.Col,kSBC.Col,kSBC.Col,kSBC.Col,kSBC.Col,kSBC.Col
+statusColour10 .byte kSBC.Col,kSBC.Col,13,13,0,kSBC.Col,kSBC.Col,kSBC.Col
+
+statusLines .byte 0,1,3,4,1,2,0,1,5,1,1,1,6,1,1,1,7,8,1,1,9,10,1,2	
 	
 plotStatusArea
-; fill area
 	lda #<kVectors.charBase + 32 
 	sta $fb
+	sta $fd
 	lda #>kVectors.charBase + 32 
 	sta $fc
-	lda #kStatusBorderChars.M
-	jsr _fillarea
-	lda #<$d800 + 32 
-	sta $fb
-	lda #>$d800 + 32 
-	sta $fc
-	lda #kStatusBorderChars.Col
-	jsr _fillarea
-; plot side lines
-	lda #<kVectors.charBase + 32 + 40
-	sta $fb
-	lda #>kVectors.charBase + 32 + 40
-	sta $fc
-	lda #<kVectors.charBase + 39 + 40
-	sta $fd
-	lda #>kVectors.charBase + 39 + 40
+	eor # (>kVectors.charBase) ^ $d8
 	sta $fe
-	ldx #22
+	lda #0
+	sta ZPTemp
+_loop
+	ldx ZPTemp
+	lda statusLines,x
+	asl a
+	asl a
+	asl a
+	tax
 	ldy #0
-_lop2
-	lda # kStatusBorderChars.L
+_lineLoop	
+	lda statusLine0,x
 	sta ($fb),y
-	lda # kStatusBorderChars.R
+	lda statusColour0,x
 	sta ($fd),y
+	inx
+	iny
+	cpy #8
+	bcc _lineLoop
 	clc
 	lda $fb
 	adc #40
 	sta $fb
+	sta $fd
 	lda $fc
 	adc #00
 	sta $fc
+	eor # (>kVectors.charBase) ^ $d8
+	sta $fe
+	lda ZPTemp
 	clc
-	lda $fd
-	adc #40
-	sta $fd
-	lda $fe
-	adc #00
-	sta $fe
-	dex
-	bpl _lop2 
-; plot corners
-	lda # kStatusBorderChars.TL
-	sta kVectors.charBase + 32
-	sta kVectors.charBase + 32 + (6*40)
-	lda # kStatusBorderChars.TR
-	sta kVectors.charBase + 39
-	sta kVectors.charBase + 39 + (6*40)
-	lda # kStatusBorderChars.BL
-	sta kVectors.charBase + 32 + (5*40)
-	sta kVectors.charBase + 32 + (23*40)
-	lda # kStatusBorderChars.BR
-	sta kVectors.charBase + 39 + (5*40)
-	sta kVectors.charBase + 39 + (23*40)
-; plot tops and bottoms
-	ldx #6
-_lop
-	lda #kStatusBorderChars.T
-	sta kVectors.charBase + 32,x
-	sta kVectors.charBase + 32 + (6*40),x
-	lda #kStatusBorderChars.B
-	sta kVectors.charBase + 32 + (5*40),x
-	sta kVectors.charBase + 32 + (23*40),x
-	dex
-	bne _lop
-; plot QWAK 
-	lda #<kVectors.charBase + 33 + 80	
-	sta $fb 
-	lda #>kVectors.charBase + 33 + 80	
-	sta $fc 
-	lda #<$d800 + 33 + 80	
-	sta $fd 
-	lda #>$d800 + 33 + 80	
-	sta $fe		
-	ldy #5
-	ldx #1
-	lda #kStatusBorderChars.QWAKT + 5	
-	jsr _plotText
-	lda #<kVectors.charBase + 33 + 120	
-	sta $fb 
-	;lda #>kVectors.charBase + 33 + 120 
-	;sta $fc	
-	lda #<$d800 + 33 + 120	
-	sta $fd 
-	;lda #>$d800 + 33 + 80	
-	;sta $fe	
-	ldy #5
-	ldx #3
-	lda #kStatusBorderChars.QWAKB + 5	
-	jsr _plotText
-; plot score
-	lda #<kVectors.charBase + 33 + (40*8)	
-	sta $fb 
-	lda #>kVectors.charBase + 33 + (40*8)	
-	sta $fc 
-	lda #<$d800 + 33 + (40*8)	
-	sta $fd 
-	lda #>$d800 + 33 + (40*8)	
-	sta $fe		
-	ldy #5
-	ldx #3
-	lda #kStatusBorderChars.Score + 5	
-	jsr _plotText
-; plot high 
-	lda #kStatusBorderChars.High
-	sta kVectors.charBase + 34 + (40*12)
-	sta kVectors.charBase + 37 + (40*12)
-	lda #kStatusBorderChars.High+1
-	sta kVectors.charBase + 35 + (40*12)
-	lda #kStatusBorderChars.High+2
-	sta kVectors.charBase + 36 + (40*12)
-	lda #3
-	sta $d800 + 34 + (40*12)
-	sta $d800 + 35 + (40*12)
-	sta $d800 + 36 + (40*12)
-	sta $d800 + 37 + (40*12)
-; a = tile num fa,fb = tile set, fe,ff = screen, f8,f9 = d800
-	lda #<fileTiles
-	sta $fa
-	lda #>fileTiles
-	sta $fb
-	lda #< kVectors.charBase + 34 + (40*16)
-	sta $fe
-	lda #> kVectors.charBase + 34 + (40*16)
-	sta $ff
-	lda #< $d800 + 34 + (40*16)
-	sta $f8
-	lda #> $d800 + 34 + (40*16)
-	sta $f9
-	lda #117
-	jsr renderTile 
-	lda #< kVectors.charBase + 34 + (40*20)
-	sta $fe
-	lda #> kVectors.charBase + 34 + (40*20)
-	sta $ff
-	lda #< $d800 + 34 + (40*20)
-	sta $f8
-	lda #> $d800 + 34 + (40*20)
-	sta $f9
-	lda #118
-	jsr renderTile 
-	lda #190 ; x
-	sta kVectors.charBase + 36 + (40*17)
-	sta kVectors.charBase + 36 + (40*21)
-	lda #0
-	sta $d800 + 36 + (40*17)
-	sta $d800 + 36 + (40*21)
+	adc #1
+	cmp #24
+	bcs _done
+	sta ZPTemp
+	bne _loop
+_done
 	jsr pltScore
 	jsr pltHighScore
 	jsr pltLives
-	jsr pltFlowers
-_exit	
-	rts
+	jmp pltFlowers
 	
-_fillarea
-	ldx #23
-_row
-	ldy #7
-_rowloop
-	sta ($fb),y
-	dey
-	bpl _rowloop
-	dex
-	bmi _exit
-	pha
-	clc
-	lda $fb
-	adc #40
-	sta $fb
-	lda $fc
-	adc #00
-	sta $fc
-	pla
-	jmp _row
-_plotText
-_qt sta ($fb),y
-	pha
-	txa
-	sta ($fd),y
-	pla
-	sec
-	sbc #1
-	dey
-	bpl _qt
-	rts
+;; fill area
+;	lda #<kVectors.charBase + 32 
+;	sta $fb
+;	lda #>kVectors.charBase + 32 
+;	sta $fc
+;	lda #kStatusBorderChars.M
+;	jsr _fillarea
+;	lda #<$d800 + 32 
+;	sta $fb
+;	lda #>$d800 + 32 
+;	sta $fc
+;	lda #kStatusBorderChars.Col
+;	jsr _fillarea
+;; plot side lines
+;	lda #<kVectors.charBase + 32 + 40
+;	sta $fb
+;	lda #>kVectors.charBase + 32 + 40
+;	sta $fc
+;	lda #<kVectors.charBase + 39 + 40
+;	sta $fd
+;	lda #>kVectors.charBase + 39 + 40
+;	sta $fe
+;	ldx #22
+;	ldy #0
+;_lop2
+;	lda # kStatusBorderChars.L
+;	sta ($fb),y
+;	lda # kStatusBorderChars.R
+;	sta ($fd),y
+;	clc
+;	lda $fb
+;	adc #40
+;	sta $fb
+;	lda $fc
+;	adc #00
+;	sta $fc
+;	clc
+;	lda $fd
+;	adc #40
+;	sta $fd
+;	lda $fe
+;	adc #00
+;	sta $fe
+;	dex
+;	bpl _lop2 
+;; plot corners
+;	lda # kStatusBorderChars.TL
+;	sta kVectors.charBase + 32
+;	sta kVectors.charBase + 32 + (6*40)
+;	lda # kStatusBorderChars.TR
+;	sta kVectors.charBase + 39
+;	sta kVectors.charBase + 39 + (6*40)
+;	lda # kStatusBorderChars.BL
+;	sta kVectors.charBase + 32 + (5*40)
+;	sta kVectors.charBase + 32 + (23*40)
+;	lda # kStatusBorderChars.BR
+;	sta kVectors.charBase + 39 + (5*40)
+;	sta kVectors.charBase + 39 + (23*40)
+;; plot tops and bottoms
+;	ldx #6
+;_lop
+;	lda #kStatusBorderChars.T
+;	sta kVectors.charBase + 32,x
+;	sta kVectors.charBase + 32 + (6*40),x
+;	lda #kStatusBorderChars.B
+;	sta kVectors.charBase + 32 + (5*40),x
+;	sta kVectors.charBase + 32 + (23*40),x
+;	dex
+;	bne _lop
+;; plot QWAK 
+;	lda #<kVectors.charBase + 33 + 80	
+;	sta $fb 
+;	lda #>kVectors.charBase + 33 + 80	
+;	sta $fc 
+;	lda #<$d800 + 33 + 80	
+;	sta $fd 
+;	lda #>$d800 + 33 + 80	
+;	sta $fe		
+;	ldy #5
+;	ldx #1
+;	lda #kStatusBorderChars.QWAKT + 5	
+;	jsr _plotText
+;	lda #<kVectors.charBase + 33 + 120	
+;	sta $fb 
+;;	lda #>kVectors.charBase + 33 + 120 
+;;	sta $fc	
+;	lda #<$d800 + 33 + 120	
+;	sta $fd 
+;;	lda #>$d800 + 33 + 80	
+;;	sta $fe	
+;	ldy #5
+;	ldx #3
+;	lda #kStatusBorderChars.QWAKB + 5	
+;	jsr _plotText
+;; plot score
+;	lda #<kVectors.charBase + 33 + (40*8)	
+;	sta $fb 
+;	lda #>kVectors.charBase + 33 + (40*8)	
+;	sta $fc 
+;	lda #<$d800 + 33 + (40*8)	
+;	sta $fd 
+;	lda #>$d800 + 33 + (40*8)	
+;	sta $fe		
+;	ldy #5
+;	ldx #3
+;	lda #kStatusBorderChars.Score + 5	
+;	jsr _plotText
+;; plot high 
+;	lda #kStatusBorderChars.High
+;	sta kVectors.charBase + 34 + (40*12)
+;	sta kVectors.charBase + 37 + (40*12)
+;	lda #kStatusBorderChars.High+1
+;	sta kVectors.charBase + 35 + (40*12)
+;	lda #kStatusBorderChars.High+2
+;	sta kVectors.charBase + 36 + (40*12)
+;	lda #3
+;	sta $d800 + 34 + (40*12)
+;	sta $d800 + 35 + (40*12)
+;	sta $d800 + 36 + (40*12)
+;	sta $d800 + 37 + (40*12)
+;; a = tile num fa,fb = tile set, fe,ff = screen, f8,f9 = d800
+;	lda #<fileTiles
+;	sta $fa
+;	lda #>fileTiles
+;	sta $fb
+;	lda #< kVectors.charBase + 34 + (40*16)
+;	sta $fe
+;	lda #> kVectors.charBase + 34 + (40*16)
+;	sta $ff
+;	lda #< $d800 + 34 + (40*16)
+;	sta $f8
+;	lda #> $d800 + 34 + (40*16)
+;	sta $f9
+;	lda #117
+;	jsr renderTile 
+;	lda #< kVectors.charBase + 34 + (40*20)
+;	sta $fe
+;	lda #> kVectors.charBase + 34 + (40*20)
+;	sta $ff
+;	lda #< $d800 + 34 + (40*20)
+;	sta $f8
+;	lda #> $d800 + 34 + (40*20)
+;	sta $f9
+;	lda #118
+;	jsr renderTile 
+;	lda #190 ; x
+;	sta kVectors.charBase + 36 + (40*17)
+;	sta kVectors.charBase + 36 + (40*21)
+;	lda #0
+;	sta $d800 + 36 + (40*17)
+;	sta $d800 + 36 + (40*21)
+;	jsr pltScore
+;	jsr pltHighScore
+;	jsr pltLives
+;	jsr pltFlowers
+;_exit	
+;	rts
+;	
+;_fillarea
+;	ldx #23
+;_row
+;	ldy #7
+;_rowloop
+;	sta ($fb),y
+;	dey
+;	bpl _rowloop
+;	dex
+;	bmi _exit
+;	pha
+;	clc
+;	lda $fb
+;	adc #40
+;	sta $fb
+;	lda $fc
+;	adc #00
+;	sta $fc
+;	pla
+;	jmp _row
+;_plotText
+;_qt sta ($fb),y
+;	pha
+;	txa
+;	sta ($fd),y
+;	pla
+;	sec
+;	sbc #1
+;	dey
+;	bpl _qt
+;	rts
 	
 pltScore
 	ldx #5
