@@ -59,54 +59,59 @@ kPlayerParams .block
 .bend
 
 sGameData .struct 
-lives .byte 3
-flowers .byte 0
-score .byte 0,0,0,0,0,0
-high .byte 0,0,0,0,0,0
-currLevel .byte 0
-exitOpen .byte 0
+lives .byte ?
+flowers .byte ?
+score .byte ?,?,?,?,?,?
+high .byte ?,?,?,?,?,?
+currLevel .byte ?
+exitOpen .byte ?
 .ends
 
 sLevelData .struct
-numKeys .byte 0
-totalKeys .byte 0
-playerX .byte 0
-playerY .byte 0
-exitX .byte 0
-exitY .byte 0
+numKeys .byte ?
+totalKeys .byte ?
+playerX .byte ?
+playerY .byte ?
+exitX .byte ?
+exitY .byte ?
 .ends
 
 sTimerTickDowns .struct
-dissBlocks .byte 0
-playerAnim .byte 0
+dissBlocks .byte ?
+playerAnim .byte ?
 .ends
 
 sPlayerData .struct
-dead .byte 0
-hasShield .byte 0
-canFloat .byte 0
-hasSpring .byte 0
-onGround .byte 0
-hasJumped .byte 0
-isFalling .byte 0
-floatTimer .byte 0
-facingRight .byte 0
-yDeltaAccum .word 0
-baseSprite .byte 0
-frameOffset .byte 0
-frameCount .byte 0
-frameTimer .byte 0
-movingLR .byte 0
+dead .byte ?
+hasShield .byte ?
+canFloat .byte ?
+hasSpring .byte ?
+onGround .byte ?
+hasJumped .byte ?
+isFalling .byte ?
+floatTimer .byte ?
+facingRight .byte ?
+yDeltaAccum .word ?
+baseSprite .byte ?
+frameOffset .byte ?
+frameCount .byte ?
+frameTimer .byte ?
+movingLR .byte ?
 .ends
 
 sEntityData .struct
-type		.byte 0,0,0,0,0,0,0
-direction	.byte 0,0,0,0,0,0,0
-active		.byte 0,0,0,0,0,0,0
-movTimer	.byte 0,0,0,0,0,0,0
-animTimer	.byte 0,0,0,0,0,0,0
-originalY	.byte 0,0,0,0,0,0,0
-entState	.byte 0,0,0,0,0,0,0
+type		.fill 7 ; .byte ?,?,?,?,?,?,?
+direction	.fill 7 ;.byte ?,?,?,?,?,?,?
+active		.fill 7 ;.byte ?,?,?,?,?,?,?
+movTimer	.fill 7 ;.byte ?,?,?,?,?,?,?
+animTimer	.fill 7 ;.byte ?,?,?,?,?,?,?
+originalY	.fill 7 ;.byte ?,?,?,?,?,?,?
+entState	.fill 7 ;.byte ?,?,?,?,?,?,?
+.ends
+
+sCSTCCParams .struct	
+xDeltaCheck .byte ? ; pixels
+yDeltaCheck .byte ? ; pixels
 .ends
 
 playerTempCol	= $d2
@@ -116,20 +121,20 @@ TempX			= $d4
 mplex .block
 kMaxSpr = $1f
 sort = $02
-ypos = $c000	;sprite y position frame buffer
 ybuf = $22		;sprite y position raster buffer
-xpos = $c020	;sprite x position frame buffer
 xbuf = $42		;sprite x position raster buffer
-xmsb = $c040	;sprite x msb frame buffer
 mbuf = $62		;sprite x msb raster buffer
-sprc = $c060	;sprite color frame buffer
 cbuf = $82		;sprite color raster buffer
-sprp = $c080	;sprite pointer frame buffer
 pbuf = $a2		;sprite pointer raster buffer
 sptr = $c2		;sprite pointer for raster
 cnt  = $c3
 mnt  = $c4
 lsbtod = $c5
+ypos = $c000	;sprite y position frame buffer
+xpos = $c020	;sprite x position frame buffer
+xmsb = $c040	;sprite x msb frame buffer
+sprc = $c060	;sprite color frame buffer
+sprp = $c080	;sprite pointer frame buffer
 .bend
 
 LevelTileMapPtrLo = $d5
@@ -150,7 +155,51 @@ EntIndexVIC			= $e3
 EntNum				= $e4
 CollisionResult		= $e5
 
+tileMapTemp = $c100 ; .fill 240
 
+variables = $0300
+* = $0300
+
+joyLeft	 .byte ?
+joyRight .byte ?
+joyUp	 .byte ?
+joyDown	 .byte ?
+joyFire	 .byte ?
+
+GameData .dstruct sGameData
+LevelData .dstruct sLevelData
+PlayerData .dstruct sPlayerData
+TICK_DOWN_START = *
+TickDowns .dstruct sTimerTickDowns
+TICK_DOWN_END = *
+
+levelNum .byte ?
+
+playerTile1			.byte ?
+playerTile2			.byte ?
+playerMidTile		.byte ?
+playerMidBelowTile	.byte ?
+playerMidBelowOtherTile .byte ?
+
+playerTile1X		.byte ?
+playerTile2X		.byte ?
+playerMidTileX		.byte ?
+playerMidBelowTileX .byte ?
+playerMidBelowOtherTileX .byte ?
+
+playerTile1Y		.byte ?
+playerTile2Y		.byte ?
+playerMidTileY		.byte ?
+playerMidBelowTileY .byte ?
+playerMidBelowOtherTileY .byte ?
+
+EntityData .dstruct sEntityData
+
+.cerror * > $400, "Too many variables"
+
+; .warn "Size of variables = ", $400-*
+
+checkSpriteToCharData .dstruct sCSTCCParams 
 
 
 *= $0801 ; 00 0C 08 0A 00 9E 20 32 30 36 34 00 00
@@ -194,6 +243,12 @@ start
 		sta mplex.ypos,x	; disbale all sprites
 		inx			  
 		cpx # mPlex.kMaxSpr+1	 ;have we reached 32 yet?
+		bne -
+		ldx #0
+		lda #0
+-		sta variables,x		; clear all the variables
+		sta tileMapTemp,x	; clear the tile map and after it so collisions is 00
+		inx
 		bne -
 		jsr emptyCRAM
 		jsr convertLevelToTileMap
@@ -413,21 +468,6 @@ PlayerJumpLUT .byte kPlayerParams.jumpDeltaAccum, kPlayerParams.jumpDeltaAccumFl
 PlayerSprLUT		.byte $84  ,$80		,$8c	,$88
 PlayerFrameCountLUT .byte 1	   ,1		,4		,4
 PlayerAnimTimer		.byte 255  ,255		,8		,8
-
-joyLeft	 .byte 0
-joyRight .byte 0
-joyUp	 .byte 0
-joyDown	 .byte 0
-joyFire	 .byte 0
-
-GameData .dstruct sGameData
-LevelData .dstruct sLevelData
-PlayerData .dstruct sPlayerData
-TICK_DOWN_START = *
-TickDowns .dstruct sTimerTickDowns
-TICK_DOWN_END = *
-
-levelNum .byte 0
 
 emptyCRAM
 		ldx #00
@@ -815,35 +855,6 @@ _joyLeft
 _joyRight
 		stx joyRight
 		jmp _checkFire
-		
-sCSTCCParams .struct	
-sprNum .byte 0
-sprWindowX .byte 3 ; pixel
-sprWindowW .byte 2 ; chars
-sprWindowY .byte 5 ; pixel
-sprWindowH .byte 2 ; chars
-xDeltaCheck .byte 0 ; pixels
-yDeltaCheck .byte 0 ; pixels
-.ends
-
-checkSpriteToCharData .dstruct sCSTCCParams 
-playerTile1			.byte 0
-playerTile2			.byte 0
-playerMidTile		.byte 0
-playerMidBelowTile	.byte 0
-playerMidBelowOtherTile .byte 0
-
-playerTile1X		.byte 0
-playerTile2X		.byte 0
-playerMidTileX		.byte 0
-playerMidBelowTileX .byte 0
-playerMidBelowOtherTileX .byte 0
-
-playerTile1Y		.byte 0
-playerTile2Y		.byte 0
-playerMidTileY		.byte 0
-playerMidBelowTileY .byte 0
-playerMidBelowOtherTileY .byte 0
 	
 CSTCCInteral
 	ldx mplex.xpos
@@ -1512,196 +1523,6 @@ _done
 	jsr pltLives
 	jmp pltFlowers
 	
-;; fill area
-;	lda #<kVectors.charBase + 32 
-;	sta $fb
-;	lda #>kVectors.charBase + 32 
-;	sta $fc
-;	lda #kStatusBorderChars.M
-;	jsr _fillarea
-;	lda #<$d800 + 32 
-;	sta $fb
-;	lda #>$d800 + 32 
-;	sta $fc
-;	lda #kStatusBorderChars.Col
-;	jsr _fillarea
-;; plot side lines
-;	lda #<kVectors.charBase + 32 + 40
-;	sta $fb
-;	lda #>kVectors.charBase + 32 + 40
-;	sta $fc
-;	lda #<kVectors.charBase + 39 + 40
-;	sta $fd
-;	lda #>kVectors.charBase + 39 + 40
-;	sta $fe
-;	ldx #22
-;	ldy #0
-;_lop2
-;	lda # kStatusBorderChars.L
-;	sta ($fb),y
-;	lda # kStatusBorderChars.R
-;	sta ($fd),y
-;	clc
-;	lda $fb
-;	adc #40
-;	sta $fb
-;	lda $fc
-;	adc #00
-;	sta $fc
-;	clc
-;	lda $fd
-;	adc #40
-;	sta $fd
-;	lda $fe
-;	adc #00
-;	sta $fe
-;	dex
-;	bpl _lop2 
-;; plot corners
-;	lda # kStatusBorderChars.TL
-;	sta kVectors.charBase + 32
-;	sta kVectors.charBase + 32 + (6*40)
-;	lda # kStatusBorderChars.TR
-;	sta kVectors.charBase + 39
-;	sta kVectors.charBase + 39 + (6*40)
-;	lda # kStatusBorderChars.BL
-;	sta kVectors.charBase + 32 + (5*40)
-;	sta kVectors.charBase + 32 + (23*40)
-;	lda # kStatusBorderChars.BR
-;	sta kVectors.charBase + 39 + (5*40)
-;	sta kVectors.charBase + 39 + (23*40)
-;; plot tops and bottoms
-;	ldx #6
-;_lop
-;	lda #kStatusBorderChars.T
-;	sta kVectors.charBase + 32,x
-;	sta kVectors.charBase + 32 + (6*40),x
-;	lda #kStatusBorderChars.B
-;	sta kVectors.charBase + 32 + (5*40),x
-;	sta kVectors.charBase + 32 + (23*40),x
-;	dex
-;	bne _lop
-;; plot QWAK 
-;	lda #<kVectors.charBase + 33 + 80	
-;	sta $fb 
-;	lda #>kVectors.charBase + 33 + 80	
-;	sta $fc 
-;	lda #<$d800 + 33 + 80	
-;	sta $fd 
-;	lda #>$d800 + 33 + 80	
-;	sta $fe		
-;	ldy #5
-;	ldx #1
-;	lda #kStatusBorderChars.QWAKT + 5	
-;	jsr _plotText
-;	lda #<kVectors.charBase + 33 + 120	
-;	sta $fb 
-;;	lda #>kVectors.charBase + 33 + 120 
-;;	sta $fc	
-;	lda #<$d800 + 33 + 120	
-;	sta $fd 
-;;	lda #>$d800 + 33 + 80	
-;;	sta $fe	
-;	ldy #5
-;	ldx #3
-;	lda #kStatusBorderChars.QWAKB + 5	
-;	jsr _plotText
-;; plot score
-;	lda #<kVectors.charBase + 33 + (40*8)	
-;	sta $fb 
-;	lda #>kVectors.charBase + 33 + (40*8)	
-;	sta $fc 
-;	lda #<$d800 + 33 + (40*8)	
-;	sta $fd 
-;	lda #>$d800 + 33 + (40*8)	
-;	sta $fe		
-;	ldy #5
-;	ldx #3
-;	lda #kStatusBorderChars.Score + 5	
-;	jsr _plotText
-;; plot high 
-;	lda #kStatusBorderChars.High
-;	sta kVectors.charBase + 34 + (40*12)
-;	sta kVectors.charBase + 37 + (40*12)
-;	lda #kStatusBorderChars.High+1
-;	sta kVectors.charBase + 35 + (40*12)
-;	lda #kStatusBorderChars.High+2
-;	sta kVectors.charBase + 36 + (40*12)
-;	lda #3
-;	sta $d800 + 34 + (40*12)
-;	sta $d800 + 35 + (40*12)
-;	sta $d800 + 36 + (40*12)
-;	sta $d800 + 37 + (40*12)
-;; a = tile num fa,fb = tile set, fe,ff = screen, f8,f9 = d800
-;	lda #<fileTiles
-;	sta $fa
-;	lda #>fileTiles
-;	sta $fb
-;	lda #< kVectors.charBase + 34 + (40*16)
-;	sta $fe
-;	lda #> kVectors.charBase + 34 + (40*16)
-;	sta $ff
-;	lda #< $d800 + 34 + (40*16)
-;	sta $f8
-;	lda #> $d800 + 34 + (40*16)
-;	sta $f9
-;	lda #117
-;	jsr renderTile 
-;	lda #< kVectors.charBase + 34 + (40*20)
-;	sta $fe
-;	lda #> kVectors.charBase + 34 + (40*20)
-;	sta $ff
-;	lda #< $d800 + 34 + (40*20)
-;	sta $f8
-;	lda #> $d800 + 34 + (40*20)
-;	sta $f9
-;	lda #118
-;	jsr renderTile 
-;	lda #190 ; x
-;	sta kVectors.charBase + 36 + (40*17)
-;	sta kVectors.charBase + 36 + (40*21)
-;	lda #0
-;	sta $d800 + 36 + (40*17)
-;	sta $d800 + 36 + (40*21)
-;	jsr pltScore
-;	jsr pltHighScore
-;	jsr pltLives
-;	jsr pltFlowers
-;_exit	
-;	rts
-;	
-;_fillarea
-;	ldx #23
-;_row
-;	ldy #7
-;_rowloop
-;	sta ($fb),y
-;	dey
-;	bpl _rowloop
-;	dex
-;	bmi _exit
-;	pha
-;	clc
-;	lda $fb
-;	adc #40
-;	sta $fb
-;	lda $fc
-;	adc #00
-;	sta $fc
-;	pla
-;	jmp _row
-;_plotText
-;_qt sta ($fb),y
-;	pha
-;	txa
-;	sta ($fd),y
-;	pla
-;	sec
-;	sbc #1
-;	dey
-;	bpl _qt
-;	rts
-	
 pltScore
 	ldx #5
 _l	lda GameData.score,x
@@ -1783,16 +1604,6 @@ screenRowLUTHi
 .byte >ue
 .next
 
-levelMapsLo
-.byte <fileTileMap+20,<fileTileMap+260+20,<fileTileMap+(260*2)+20,<fileTileMap+(260*3)+20
-levelMapsHi
-.byte >fileTileMap+20,>fileTileMap+260+20,>fileTileMap+(260*2)+20,>fileTileMap+(260*3)+20
-
-tileMapTemp
-.fill 240
-
-EntityData .dstruct sEntityData
-
 ; NumEnts followed by XXXXYYYY TTTT--DD
 ; X x tile
 ; Y y tile
@@ -1822,9 +1633,6 @@ _l	lda (EntityDataPointer),y
 	adc #24 - 4
 	sta mplex.xpos+1,x
 	iny			; next byte	
-;	txa
-;	lsr a
-;	tax
 	lda (EntityDataPointer),y
 	lsr a
 	lsr a
@@ -1841,12 +1649,7 @@ _l	lda (EntityDataPointer),y
 	lda #1	
 	sta EntityData.active,x 
 	iny 		; next byte
-;	txa
-;	asl a
-;	tax
-;	inx
 	inx
-	;ldx EntNum
 	dec $fb
 	lda $fb
 	bne _l
@@ -1866,9 +1669,6 @@ _active
 	sta mplex.sprp+1,x
 	lda EntitySpriteColours,y
 	sta mplex.sprc+1,x
-;	lda $d015
-;	ora IndexToORLUT+1,x ; offset the spr num by 1 as ent 0 is spr 1,
-;	sta $d015
 	jmp _c
 	
 updateEntities
@@ -2252,10 +2052,6 @@ checkXYAgainstTile
 	lda ($fb),y
 	jsr checkSolidTile
 	bcs _not
-	;cmp #11
-	;bcc _clear ; fix me
-	;cmp #43
-	;bne _not
 _clear	
 	rts
 _not 
@@ -2307,8 +2103,6 @@ setirq
 		sta $fffb
 	  cli			 ;clear interrupt disable
 	  rts			 ;return from subroutine
-	;jmp *
-
 
 irq0
 	  pha			 ;use stack instead of zp to prevent bugs.
@@ -2793,12 +2587,6 @@ kSinJumpFall = * - SinJumpTable
 .char  1,  2,  1,  3,  2,  3,  4  
 .char  3,  5,  4,  5,  6,  5, 6,  6,  7, 8, 8 
 kSinJumpMax = * - SinJumpTable - 1
-
-;CircleJumpTableStart 
-;.char -1,-2,-2,-3,-3,-4,-5
-;.char 5,4,3,3,2,2,1
-;CircleJumpTableCount = * - CircleJumpTableStart 
-;.char -1,-2,-2,-3,-3,-4,-5
 
 CircleJumpTableStart 
 .char  5, 5, 5, 5, 4, 4, 4, 3, 2, 2, 1, 1, 0,-1,-1,-2,-2,-3,-4,-4,-4,-5,-5,-5,-5
