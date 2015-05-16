@@ -1,7 +1,7 @@
 .include "qwak_structs.asm"
 
 kVectors .block
-	charBase = $0400
+	charBase = $4000
 	spr0ID = charBase+1016
 	spr1ID = charBase+1017
 	spr2ID = charBase+1018
@@ -74,22 +74,22 @@ kPlayerAnimsIndex .block
 
 ; kStatusBorderChars		
 kSBC .block
-	M	= 191
-	TL	= 203
-	T	= 204
-	TR	= 206
-	L	= 205
-	R	= 207
-	BL	= 229
-	B	= 230
-	BR	= 231
+	M	= 205
+	TL	= 203+3
+	T	= 204+3
+	TR	= 206+3
+	L	= 205+3
+	R	= 207+3
+	BL	= 250
+	B	= 251
+	BR	= 252
 	Col = 15
-	QWAKT = 208
-	QWAKB = 214
-	Score = 220
-	High = 226
+	QWAKT = 208+3
+	QWAKB = 214+3
+	Score = 220+3
+	High = 226+3
 	QwakP = 232
-	X = 190
+	X = 204
 	Flower = 236
 .bend
 
@@ -187,7 +187,14 @@ checkSpriteToCharData .dstruct sCSTCCParams
 *= $0810
 start
 		jsr setirq ; clear all interupts and put out own in
-		lda #%00011110
+		lda $dd02
+		ora #2
+		sta $dd02
+		lda $dd00
+		and #252
+		ora #2
+		sta $dd00
+		lda #%00000010
 		sta $d018
 		lda #%00011000
 		sta $d016
@@ -198,7 +205,7 @@ start
 		sta $d020
 		lda #1
 		sta $d023
-		lda #128
+		lda #64
 		sta mplex.sprp
 		lda #1
 		sta $d015
@@ -431,7 +438,7 @@ _store	sta PlayerData.frameOffset
 
 PlayerJumpLUT .byte kPlayerParams.jumpDeltaAccum, kPlayerParams.jumpDeltaAccumFloat
 						; Left	Right  Walk L	Walk R
-PlayerSprLUT		.byte $84  ,$80		,$8c	,$88
+PlayerSprLUT		.byte $44  ,$40		,$4C	,$48
 PlayerFrameCountLUT .byte 1	   ,1		,4		,4
 PlayerAnimTimer		.byte 255  ,255		,8		,8
 
@@ -637,7 +644,7 @@ _checkBottom
 		jmp _done2				
 						
 		; back,wall,wall1,wall2,wall3,wall4,spike,flower,fruit,key1,key2,key3,key4,shield,spring,potion,egg,exit,player,diss		
-toolToTileLUT .byte 4,32,32,32,32,32,80,87,93,81,81,81,81,88,89,90,91,82,117,33,34,35,36,37,38,39,40,41,42,43		
+toolToTileLUT .byte 0,7,7,7,7,7,19,26,31,20,20,20,20,27,28,29,30,21,117,6,8,9,10,11,12,13,14,15,16,17,18		
 kTiles .block
 	back = 0
 	wall = 1
@@ -658,9 +665,12 @@ kTiles .block
 	egg = 16
 	exit = 17
 	player = 18
-	diss = 19
-	dissNoColide = 29
+	pipe = 19
+	diss = 20
+	dissNoColide = 30
 .bend
+
+kDoorOpen = 25
 
 kKeyToWallDelta = kTiles.key1 - kTiles.wall1
 
@@ -1118,7 +1128,7 @@ _changeDoor
 	sta CollTLX
 	lda LevelData.exitY
 	sta CollTLY
-	lda #86
+	lda #kDoorOpen
 	jsr pltSingleTileNoLookup
 	lda #1
 	sta GameData.exitOpen
@@ -1376,6 +1386,8 @@ checkSolidTile
 	cmp # kTiles.exit
 	beq _notSafe
 _skipDoorCheck
+	cmp # kTiles.pipe
+	beq _notSafe
 	cmp # kTiles.dissNoColide
 	beq _exitSafe
 	cmp # kTiles.diss
@@ -1738,7 +1750,7 @@ _fishFunc
 	cmp # kDirections.up
 	bne _fishDown
 	;fish up
-	lda #128+80
+	lda #64+80
 	sta mplex.sprp+1,x ; will need to change to animation type
 	lda mplex.ypos+1,x
 	cmp # kFishLimits.startTwo
@@ -1754,7 +1766,7 @@ _fupNormal
 	sta EntityData.direction,x
 	jmp _moveFish
 _fishDown
-	lda #128+84
+	lda #64+84
 	sta mplex.sprp+1,x
 	lda EntityData.entState,x
 	cmp #kSinJumpMax
@@ -2473,7 +2485,7 @@ eirq	pla
 justRTI	rti
 	
 EntitySpriteColours		.byte 4,15,10,14,15,5,3,14
-EntitySpriteStartFrame	.byte 128+32,128+40,128+48,128+56,128+64,128+72,128+80,128+88
+EntitySpriteStartFrame	.byte 64+32,64+40,64+48,64+56,64+64,64+72,64+80,64+88
 
 IndexToORLUT	.byte 1,2,4,8,16,32,64,128
 IndexToANDLUT	.byte 254,253,251,247,239,223,191,127
@@ -2539,19 +2551,21 @@ screenRowLUTHi
 .byte >ue
 .next
 
-*= $2000
-fileSprites ;
-.binary "sprites.bin"		
-* = $3800
+*= $4000
+fileScreen ;
+*= $4400
+fileCharCols ;		
+.binary "testattribs.raw"	
+*= $4500
+fileTiles ;		
+.binary "tiledefs.raw"	; needs to be 80 bytes
+*= $4800
 fileChars ;
 .binary "testchars.raw"
-* = $4000
-fileCharCols ;		
-.binary "testattribs.raw"		
-* = $4100	
-fileTiles ;		
-.binary "tiledefs.raw"	
-* = $4300		
+*= $5000
+fileSprites ;
+.binary "sprites.bin"		
+* = $7000		
 fileTileMap; 
 .binary "testmap.raw"
 fileEntityTest
