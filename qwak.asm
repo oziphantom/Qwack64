@@ -563,8 +563,8 @@ _key	inc LevelData.numKeys
 		inc LevelData.totalKeys
 		jmp _cont
 _dissBlock
-		lda #33
-		sta ($fe),y
+		;lda #33
+		;sta ($fe),y
 		lda # kTiles.diss
 		jmp _cont		
 _exitPos
