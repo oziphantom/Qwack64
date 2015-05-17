@@ -27,6 +27,7 @@ kTimers .block
 	jumpUpValue = $38 ; 3.5 tile
 	jumpUpSpringValue = $48 ; 4.5 tiles
 	floatTimer = $50 
+	DoorAnimeRate = 10
 .bend
 
 kEntity .block
@@ -173,12 +174,10 @@ playerMidBelowOtherTileY .byte ?
 EntityData .dstruct sEntityData
 
 checkSpriteToCharData .dstruct sCSTCCParams 
-
+ 
 .cerror * > $400, "Too many variables"
 
-;.warn "Size of variables = ", $400-*
-
-
+; .warn "Size of variables = ", $400-*
 
 *= $0801 ; 00 0C 08 0A 00 9E 20 32 30 36 34 00 00
 	.word (+), 2005 ;pointer, line number
@@ -284,6 +283,7 @@ start
 		sta mplex.ypos
 		jsr updatePlayerAnim
 		jsr updateEntities
+		jsr animateDoor
 ;	dec $d020
 ;	dec $d020	
 	
@@ -674,7 +674,7 @@ kTiles .block
 	diss = 20
 	dissNoColide = 30
 .bend
-
+kDoorClosed = 21
 kDoorOpen = 25
 
 kKeyToWallDelta = kTiles.key1 - kTiles.wall1
@@ -682,6 +682,8 @@ kKeyToWallDelta = kTiles.key1 - kTiles.wall1
 plotTileMap
 		stx $fc
 		sty $fd
+		lda # kDoorClosed
+		sta LevelData.exitFrame
 		lda # <kVectors.charBase
 		sta $fe
 		lda # >kVectors.charBase
@@ -1125,22 +1127,16 @@ _done
 	beq _changeDoor
 	rts
 _changeDoor
-	lda CollTLX
-	pha
-	lda CollTLY
-	pha
-	lda LevelData.exitX
-	sta CollTLX
-	lda LevelData.exitY
-	sta CollTLY
-	lda #kDoorOpen
-	jsr pltSingleTileNoLookup
+;	lda CollTLX
+;	pha
+;	lda CollTLY
+;	pha
 	lda #1
 	sta GameData.exitOpen
-	pla 
-	sta CollTLY
-	pla 
-	sta CollTLX 
+;	pla 
+;	sta CollTLY
+;	pla 
+;	sta CollTLX 
 	rts
 flowerFunc
 	jsr clearTile
@@ -1225,6 +1221,27 @@ _checkTile
 awardLife
 	inc GameData.lives
 	jmp pltLives
+	
+animateDoor
+	lda GameData.exitOpen
+	beq _exit
+	lda TickDowns.doorAnim
+	bne _exit
+	lda #kTimers.DoorAnimeRate
+	sta TickDowns.doorAnim
+	lda LevelData.exitX
+	sta CollTLX
+	lda LevelData.exitY
+	sta CollTLY
+	lda LevelData.exitFrame
+	cmp #kDoorOpen
+	beq _exit
+	clc
+	adc #1
+	sta LevelData.exitFrame
+	jmp pltSingleTileNoLookup ; skips below
+_exit
+	rts
 
 CharObjectMinLUT .byte kTiles.exit,kTiles.fruit,kTiles.key1,kTiles.key2,kTiles.key3,kTiles.key4,kTiles.flower,kTiles.spike,kTiles.spring,kTiles.potion,kTiles.shield
 CharObjectMaxLUT ; .byte 168,77,49,57,44
