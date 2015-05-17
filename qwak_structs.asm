@@ -37,6 +37,7 @@ frameOffset .byte ?
 frameCount .byte ?
 frameTimer .byte ?
 movingLR .byte ?
+currAnim .byte ?
 .ends
 
 sEntityData .struct

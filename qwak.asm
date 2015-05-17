@@ -172,11 +172,12 @@ playerMidBelowOtherTileY .byte ?
 
 EntityData .dstruct sEntityData
 
+checkSpriteToCharData .dstruct sCSTCCParams 
+
 .cerror * > $400, "Too many variables"
 
-; .warn "Size of variables = ", $400-*
+;.warn "Size of variables = ", $400-*
 
-checkSpriteToCharData .dstruct sCSTCCParams 
 
 
 *= $0801 ; 00 0C 08 0A 00 9E 20 32 30 36 34 00 00
@@ -241,7 +242,7 @@ start
 		ldy # >tileMapTemp
 		jsr plotTileMap
 		jsr plotStatusArea
-		jsr resetPlayerData
+		jsr resetPlayerData 
 		jsr setPlayerToSpawnPoint
 		jsr unpackEntityBytes
 		jsr setEntitySprites
@@ -298,8 +299,8 @@ joyToPlayerDelta
 		beq _cr
 		lda #$ff
 		sta checkSpriteToCharData.xDeltaCheck
-		ldx PlayerData.movingLR
-		bne _cu
+		;ldx PlayerData.movingLR
+		;bne _cu
 		lda #1
 		sta PlayerData.movingLR
 		lda #0
@@ -309,8 +310,8 @@ _cr		lda joyRight
 		beq _cu
 		lda #1		
 		sta checkSpriteToCharData.xDeltaCheck
-		ldx PlayerData.movingLR
-		bne _cu
+		;ldx PlayerData.movingLR
+		;bne _cu
 		sta PlayerData.movingLR
 		jsr changePlayerDir		
 ; Check Up and Down		
@@ -402,6 +403,9 @@ incPlayerYDeltaAndReturn
 		rts
 		
 setPlayerAnimeTo
+		cpx PlayerData.currAnim
+		beq _dontchange
+		stx PlayerData.currAnim
 		lda PlayerSprLUT,x
 		sta PlayerData.baseSprite
 		sta mplex.sprp
@@ -412,6 +416,7 @@ setPlayerAnimeTo
 		sta TickDowns.playerAnim
 		lda #0
 		sta PlayerData.frameOffset
+_dontchange		
 		rts
 		
 updatePlayerAnim
@@ -1273,8 +1278,7 @@ pltSingleTileNoLookup
 	sta $f8
 	lda $fc
 	sta $ff
-	clc
-	adc #$d4
+	eor # (>kVectors.charBase) ^ $d8
 	sta $f9
 	lda #<fileTiles
 	sta $fa
