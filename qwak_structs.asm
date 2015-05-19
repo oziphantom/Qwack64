@@ -14,11 +14,13 @@ playerX .byte ?
 playerY .byte ?
 exitX .byte ?
 exitY .byte ?
+exitFrame .byte ?
 .ends
 
 sTimerTickDowns .struct
-dissBlocks .byte ?
-playerAnim .byte ?
+dissBlocks 	.byte ?
+playerAnim 	.byte ?
+doorAnim	.byte ?
 .ends
 
 sPlayerData .struct
