@@ -177,7 +177,7 @@ checkSpriteToCharData .dstruct sCSTCCParams
  
 .cerror * > $400, "Too many variables"
 
- .warn "Size of variables = ", $400-*
+; .warn "Size of variables = ", $400-*
 
 *= $0801 ; 00 0C 08 0A 00 9E 20 32 30 36 34 00 00
 	.word (+), 2005 ;pointer, line number
@@ -859,46 +859,46 @@ checkSpriteToCharCollision
 	lda #0
 	sta PlayerData.onGround
 	;mid
-	lda #kBounds.screenMinX-14
+	lda #kBounds.screenMinX-14+4
 	sec 
 	sbc checkSpriteToCharData.xDeltaCheck
-	sta $fe
+	sta $fe ; x offset from sprite
 	lda #kBounds.screenMinY-14
 	sec 
 	sbc checkSpriteToCharData.yDeltaCheck
-	sta $fd
+	sta $fd ; y offset from sprite
 	lda #2
 	sta playerTempCol
 	jsr CSTCCInteral
 	jsr CSTCCInteral
 	; mid below
-	lda #kBounds.screenMinX-14
+	lda #kBounds.screenMinX-14+4
 	sec 
 	sbc checkSpriteToCharData.xDeltaCheck
-	sta $fe
+	sta $fe ; x offset from sprite
 	lda #kBounds.screenMinY-24
 	sec 
 	sbc checkSpriteToCharData.yDeltaCheck
-	sta $fd
+	sta $fd ; y offset from sprite
 	inc playerTempCol
 	jsr CSTCCInteral
 	lda PlayerData.facingRight
 	beq _checkBelowLeft
-	lda #kBounds.screenMinX-18
+	lda #kBounds.screenMinX-18+4
 	sec 
 	sbc checkSpriteToCharData.xDeltaCheck
-	sta $fe
+	sta $fe ; x offset from sprite
 	jmp _checkExtraBelow
 _checkBelowLeft 
-	lda #kBounds.screenMinX-10
+	lda #kBounds.screenMinX-10+4
 	sec 
 	sbc checkSpriteToCharData.xDeltaCheck
-	sta $fe
+	sta $fe ; x offset from sprite
 _checkExtraBelow
 	lda #kBounds.screenMinY-24
 	sec 
 	sbc checkSpriteToCharData.yDeltaCheck
-	sta $fd
+	sta $fd ; y offset from sprite
 	inc playerTempCol
 	jsr CSTCCInteral
 	
@@ -970,98 +970,54 @@ _checkRight
 	bcs _XFF
 _exit	
 	rts
-
+;			 
+CheckPointsX .byte kBounds.screenMinX-11+4,kBounds.screenMinX-17+4 ; up
+			 .byte kBounds.screenMinX-18+4,kBounds.screenMinX-18+4 ; right
+			 .byte kBounds.screenMinX-11+4,kBounds.screenMinX-17+4 ; down
+			 .byte kBounds.screenMinX-10+8,kBounds.screenMinX-10+8 ; left
+CheckPointsY .byte kBounds.screenMinY-06+5,kBounds.screenMinY-06+5 ; up
+			 .byte kBounds.screenMinY-07+5,kBounds.screenMinY-20+5 ; right
+			 .byte kBounds.screenMinY-21+5,kBounds.screenMinY-21+5 ; down
+			 .byte kBounds.screenMinY-07+5,kBounds.screenMinY-20+5 ; left
+			
+checkPointsInternal
+	stx ZPTemp
+	lda CheckPointsX,x
+	sec
+	sbc checkSpriteToCharData.xDeltaCheck
+	sta $fe
+	lda CheckPointsY,x 
+	sec 
+	sbc checkSpriteToCharData.yDeltaCheck
+	sta $fd
+	lda #0
+	sta playerTempCol
+	jsr CSTCCInteral
+	ldx ZPTemp
+	inx
+	lda CheckPointsX,x
+	sec 
+	sbc checkSpriteToCharData.xDeltaCheck
+	sta $fe
+	lda CheckPointsY,x
+	sec 
+	sbc checkSpriteToCharData.yDeltaCheck
+	sta $fd
+	inc playerTempCol
+	jmp CSTCCInteral
+	
 checkUpPoints
-	lda #kBounds.screenMinX-11
-	sec 
-	sbc checkSpriteToCharData.xDeltaCheck
-	sta $fe
-	lda #kBounds.screenMinY-06
-	sec 
-	sbc checkSpriteToCharData.yDeltaCheck
-	sta $fd
-	lda #0
-	sta playerTempCol
-	jsr CSTCCInteral
-	lda #kBounds.screenMinX-17
-	sec 
-	sbc checkSpriteToCharData.xDeltaCheck
-	sta $fe
-	lda #kBounds.screenMinY-06
-	sec 
-	sbc checkSpriteToCharData.yDeltaCheck
-	sta $fd
-	inc playerTempCol
-	jmp CSTCCInteral
-	
+	ldx #0
+	jmp checkPointsInternal
 checkRightPoints
-	lda #kBounds.screenMinX-18
-	sec 
-	sbc checkSpriteToCharData.xDeltaCheck
-	sta $fe
-	lda #kBounds.screenMinY-07
-	sec 
-	sbc checkSpriteToCharData.yDeltaCheck
-	sta $fd
-	lda #0
-	sta playerTempCol
-	jsr CSTCCInteral
-	lda #kBounds.screenMinX-18
-	sec 
-	sbc checkSpriteToCharData.xDeltaCheck
-	sta $fe
-	lda #kBounds.screenMinY-20
-	sec 
-	sbc checkSpriteToCharData.yDeltaCheck
-	sta $fd
-	inc playerTempCol
-	jmp CSTCCInteral
-	
+	ldx #2
+	jmp checkPointsInternal
 checkDownPoints
-	lda #kBounds.screenMinX-11
-	sec 
-	sbc checkSpriteToCharData.xDeltaCheck
-	sta $fe
-	lda #kBounds.screenMinY-21
-	sec 
-	sbc checkSpriteToCharData.yDeltaCheck
-	sta $fd
-	lda #0
-	sta playerTempCol
-	jsr CSTCCInteral
-	lda #kBounds.screenMinX-17
-	sec 
-	sbc checkSpriteToCharData.xDeltaCheck
-	sta $fe
-	lda #kBounds.screenMinY-21
-	sec 
-	sbc checkSpriteToCharData.yDeltaCheck
-	sta $fd
-	inc playerTempCol
-	jmp CSTCCInteral
-	
+	ldx #4
+	jmp checkPointsInternal
 checkLeftPoints
-	lda #kBounds.screenMinX-10
-	sec 
-	sbc checkSpriteToCharData.xDeltaCheck
-	sta $fe
-	lda #kBounds.screenMinY-07
-	sec 
-	sbc checkSpriteToCharData.yDeltaCheck
-	sta $fd
-	lda #0
-	sta playerTempCol
-	jsr CSTCCInteral
-	lda #kBounds.screenMinX-10
-	sec 
-	sbc checkSpriteToCharData.xDeltaCheck
-	sta $fe
-	lda #kBounds.screenMinY-20
-	sec 
-	sbc checkSpriteToCharData.yDeltaCheck
-	sta $fd
-	inc playerTempCol
-	jmp CSTCCInteral
+	ldx #6
+	jmp checkPointsInternal
 	
 checkQwakOnDoor
 	lda playerMidTileX
@@ -1520,7 +1476,7 @@ setPlayerToSpawnPoint
 	asl a
 	asl a
 	clc
-	adc #20
+	adc #24
 	sta mplex.xpos
 	lda LevelData.playerY
 	asl a
@@ -1528,7 +1484,7 @@ setPlayerToSpawnPoint
 	asl a
 	asl a
 	clc
-	adc #44
+	adc #50
 	sta mplex.ypos
 	rts
 	
