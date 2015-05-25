@@ -248,6 +248,7 @@ start
 		; plot bottom row of screen
 		ldx #39
 		lda #1
+		sta mplex.lsbtod
 -		sta kVectors.charBase + ( 24*40 ),x
 		dex
 		bpl -
@@ -273,10 +274,51 @@ start
 		jsr checkSpriteToCharCollision
 		jsr checkQwakOnDoor
 		jsr checkOnDissTile
+		lda checkSpriteToCharData.xDeltaCheck
+		beq _addY
 		lda mplex.xpos
 		clc
 		adc checkSpriteToCharData.xDeltaCheck
+		sta ZPTemp
+		; xdelta +ve if this is +ve but original was -ve we have gone over
+		lda checkSpriteToCharData.xDeltaCheck
+		bmi _subbedX
+		lda mplex.xpos
+		bpl _loadX 
+		; so last pos in negative >80
+		lda ZPTemp
+		bmi _storeX
+		; new pos is positive 0-80
+		lda #0			; enable MSB
+		sta mplex.xmsb
+		jmp _storeX
+_subbedX
+		; xdelta -ve if this is -ve but original was +ve we have gone over
+		lda mplex.xpos
+		bmi _loadX
+		; last post is positive >80
+		lda ZPTemp
+		bpl _storeX		
+		lda #1			; clear MSB
+		sta mplex.xmsb
+		lda #255
+		jmp _storeX
+_loadX
+		lda ZPTemp
+_storeX		
+		ldx mplex.xmsb
+		beq _XClipInMSB
+		cmp #24
+		bcs _storeX2
+		lda #24
+		bne _storeX2
+_XClipInMSB	
+		cmp #8	
+		bcc _storeX2	
+		lda #8		
+_storeX2
 		sta mplex.xpos
+_addY		
 		lda mplex.ypos
 		clc
 		adc checkSpriteToCharData.yDeltaCheck
@@ -1475,10 +1517,13 @@ setPlayerToSpawnPoint
 	asl a
 	asl a
 	asl a
+	cmp #$F0
+	beq _msbMode
 	clc
 	adc #24
 	sta mplex.xpos
-	lda LevelData.playerY
+	sta mplex.xmsb
+_Y	lda LevelData.playerY
 	asl a
 	asl a
 	asl a
@@ -1487,6 +1532,12 @@ setPlayerToSpawnPoint
 	adc #50
 	sta mplex.ypos
 	rts
+_msbMode
+	lda #8
+	sta mplex.xpos
+	lda #0
+	sta mplex.xmsb
+	beq _Y
 	
 resetPlayerData
 	lda #0
@@ -1523,13 +1574,13 @@ _l	lda (EntityDataPointer),y
 	asl a
 	asl a
 	clc
-	adc #50-5 
+	adc #50 
 	sta mplex.ypos+1,x
 	sta ZPTemp
 	lda (EntityDataPointer),y
 	and #$f0
 	clc
-	adc #24 - 4
+	adc #24
 	sta mplex.xpos+1,x
 	iny			; next byte	
 	lda (EntityDataPointer),y
@@ -2467,8 +2518,9 @@ EntitySpriteStartFrame	.byte 64+32,64+40,64+48,64+56,64+64,64+72,64+80,64+88
 IndexToORLUT	.byte 1,2,4,8,16,32,64,128
 IndexToANDLUT	.byte 254,253,251,247,239,223,191,127
 ; 0 = right, 1 = up, 2 = left, 3 = down
-DirectionXLUT	.byte 6,	24-12,	25,		24-12
-DirectionYLUT	.byte 50-13,48,		50-13,	50-22 ; raw sprite Y offsets
+;DirectionXLUT	.byte 6,	24-12,	25,		24-12
+DirectionXLUT	.byte 8,	12,		24,	 	12
+DirectionYLUT	.byte 50-8,	50,		50-8,	50-16 ; raw sprite Y offsets
 NextDirectionLUT
 .byte 3,3,1,1,0,0,0,0 ; heli
 .byte 0,0,0,0,0,0,0,0 ; spring
