@@ -94,6 +94,10 @@ kSBC .block
 	Flower = 236
 .bend
 
+kRaster .block
+	bottomRaster = 241
+.bend
+
 playerTempCol	= $d2
 ZPTemp			= $d3
 TempX			= $d4
@@ -211,10 +215,6 @@ start
 		sta $d015
 		lda #255
 		sta $d01c
-		lda #11
-		sta $d025
-		lda #1
-		sta $d026
 		lda #7
 		sta mplex.sprc
 		;lda #%00010000
@@ -2059,52 +2059,61 @@ SetNextEntDir
 	
 ; multiplexor
 setirq
-	  sei			 ;set interrupt disable
-	  lda #$1b
-	  sta $d011		 ;raster irq to 1st half of screen.
-	  lda #$fb
-	  sta $d012		 ;irq to happen at line #$fb
-	  lda #<irq0
-	  sta $fffe		 ;hardware irq vector low byte
-	  lda #>irq0
-	  sta $ffff		 ;hardware irq vector high byte
-	  lda #$1f
-	  sta $dc0d		 ;turn off all types of cia irq/nmi.
-	  sta $dd0d
-	  lda #$01
-	  sta $d01a		 ;turn on raster irq.
-	  lda #$35
-	  sta $01		 ;no basic or kernal
-	  lda $dc0d		 ;acknowledge any irq that has occured during setup.
-		lda $dc0d
-	  lda $dd0d
-		lda $dd0d
-	  inc $d019
-		lda # <start
-		sta $fffc
-		lda # >start
-		sta $fffd
-		lda # <justRTI
-		sta $fffa
-		lda # >justRTI
-		sta $fffb
-	  cli			 ;clear interrupt disable
-	  rts			 ;return from subroutine
+	sei			 ;set interrupt disable
+	lda #$1b
+	sta $d011		 ;raster irq to 1st half of screen.
+	lda # kRaster.bottomRaster
+	sta $d012		 ;irq to happen at line #$fb
+	lda #<irq0
+	sta $fffe		 ;hardware irq vector low byte
+	lda #>irq0
+	sta $ffff		 ;hardware irq vector high byte
+	lda #$1f
+	sta $dc0d		 ;turn off all types of cia irq/nmi.
+	sta $dd0d
+	lda #$01
+	sta $d01a		 ;turn on raster irq.
+	lda #$35
+	sta $01		 ;no basic or kernal
+	lda $dc0d		 ;acknowledge any irq that has occured during setup.
+	lda $dd0d
+	inc $d019
+	lda # <start
+	sta $fffc
+	lda # >start
+	sta $fffd
+	lda # <justRTI
+	sta $fffa
+	lda # >justRTI
+	sta $fffb
+	cli			 ;clear interrupt disable
+	rts			 ;return from subroutine
 
 irq0
-	  pha			 ;use stack instead of zp to prevent bugs.
-	  txa
-	  pha
-	  tya
-	  pha
-	  inc $d019		 ;acknowledge irq
-;	inc $d020
-	  ldx #$03		 ;wait a few cycles
-l1	  dex
-	  bpl l1
-	  inx
-	  stx $d015				;sprites off = more raster time in top/bottom border
-
+	pha		;use stack instead of zp to prevent bugs.
+	txa
+	pha
+	tya
+	pha  ;13
+	inc $d019		 ;acknowledge irq 19
+	lda #%01100011  ; turn the screen off 21
+	ldx #0 ; 23
+	ldy #3 ; 25
+-	nop		; 27 41 52	
+	dey		; 33 47 58
+	bne -	; 39 50 60
+	sta $d011
+	stx $d027		; and the sprites
+	stx $d028		; and the sprites
+	stx $d029		; and the sprites
+	stx $d02A		; and the sprites
+	stx $d02B		; and the sprites
+	stx $d02C		; and the sprites
+	stx $d02D		; and the sprites
+	stx $d02E		; and the sprites
+	stx $d025
+	stx $d026
+;	inc $d021
 slop  ldy mplex.sort+1,x	;main index sort algo
 slep  lda mplex.ypos,y
 	  ldy mplex.sort,x		;this sorter uses the previous frame as a prediction buffer.
@@ -2172,7 +2181,13 @@ maxm	stx mplex.mnt
 		sta $ffff
 		lda #$28
 		sta $d012
-;	dec $d020
+		lda #%00011011  ; turn the screen on
+		sta $d011
+		lda #11
+		sta $d025
+		lda #1
+		sta $d026
+;	dec $d021
 		jmp eirq
 		
 irq1
@@ -2540,7 +2555,7 @@ done 	lda #<irq0
 		sta $fffe
 		lda #>irq0
 		sta $ffff
-		lda #$fb
+		lda # kRaster.bottomRaster
 		sta $d012
 eirq	pla
 		tay
