@@ -1579,8 +1579,16 @@ _l	lda (EntityDataPointer),y
 	sta ZPTemp
 	lda (EntityDataPointer),y
 	and #$f0
+	cmp #$f0
+	bne _notMsb
+	lda #0
+	sta mplex.xmsb+1,x
+	lda #8
+	bne _storeX
+_notMsb
 	clc
 	adc #24
+_storeX
 	sta mplex.xpos+1,x
 	iny			; next byte	
 	lda (EntityDataPointer),y
@@ -1716,7 +1724,21 @@ _right
 	lda CollisionResult
 	bne _rnotsafe
 ;	ldx EntIndexVIC ; what is in y
-	inc mPlex.xpos+1,x 
+	lda mPlex.xpos+1,x
+	clc
+	adc #1
+	bcc _rightStore ; didn't overflow
+	lda #0
+	sta mplex.xmsb+1,x
+_rightStore
+	tay
+	lda mplex.xmsb+1,x
+	bne _rightStore2
+	cpy #8
+	bcs _rnotsafe	
+_rightStore2
+	tya
+	sta mPlex.xpos+1,x 
 	jmp _next		
 _rnotsafe
 	jsr SetNextEntDir
@@ -1756,7 +1778,22 @@ _left
 	lda CollisionResult
 	bne _lnotsafe
 	;ldx EntIndexVIC ; what is in y
-	dec mPlex.xpos+1,x 
+	lda mPlex.xpos+1,x
+	sec
+	sbc #1
+	bcs _storeLeft ; didn't underflow
+	lda #1
+	sta mPlex.xmsb+1,x
+	lda #$FF
+_storeLeft 
+	tay
+	lda mPlex.xmsb+1,x
+	beq _storeLeft2
+	cpy #25
+	bcc _lnotsafe
+_storeLeft2
+	tya
+	sta mPlex.xpos+1,x	 
 	jmp _next		
 _lnotsafe
 	jsr SetNextEntDir
