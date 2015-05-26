@@ -59,6 +59,7 @@ kPlayerParams .block
 	jumpStartDelta = 255-1
 	jumpDeltaAccum = 19
 	jumpDeltaAccumFloat = 2
+	maxFallSpeed = 8
 .bend
 
 kJumpIndexs .block
@@ -319,7 +320,13 @@ _XClipInMSB
 _storeX2
 		sta mplex.xpos
 _addY		
-		lda mplex.ypos
+;		lda checkSpriteToCharData.yDeltaCheck
+;		bmi +
+;		cmp #$8
+;		bcc +
+;		lda #$8
+;		sta checkSpriteToCharData.yDeltaCheck
++		lda mplex.ypos
 		clc
 		adc checkSpriteToCharData.yDeltaCheck
 		sta mplex.ypos
@@ -441,9 +448,13 @@ incPlayerYDeltaAndReturn
 		sta PlayerData.yDeltaAccum
 		lda PlayerData.yDeltaAccum + 1
 		adc #0
-		sta PlayerData.yDeltaAccum + 1
+		bmi +
+		cmp # kPlayerParams.maxFallSpeed
+		bcc +
+		lda # kPlayerParams.maxFallSpeed
++		sta PlayerData.yDeltaAccum + 1
 		rts
-		
+
 setPlayerAnimeTo
 		cpx PlayerData.currAnim
 		beq _dontchange
