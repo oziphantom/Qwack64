@@ -23,7 +23,7 @@ kBounds .block
 .bend
 
 kTimers .block
-	dissBlocksValue = $10
+	dissBlocksValue = $8
 	jumpUpValue = $38 ; 3.5 tile
 	jumpUpSpringValue = $48 ; 4.5 tiles
 	floatTimer = $50 
@@ -635,6 +635,7 @@ _exitPos
 		jmp _cont
 
 addShadowsToMap				
+		rts ; this needs to be fixed 			
 		lda #<tileMapTemp
 		sta $fe
 		lda #>tileMapTemp
@@ -702,7 +703,7 @@ _checkBottom
 		jmp _done2				
 						
 		; back,wall,wall1,wall2,wall3,wall4,spike,flower,fruit,key1,key2,key3,key4,shield,spring,potion,egg,exit,player,diss		
-toolToTileLUT .byte 0,7,7,7,7,7,19,26,31,20,20,20,20,27,28,29,30,21,117,6,8,9,10,11,12,13,14,15,16,17,18		
+toolToTileLUT .byte 0,7,7,7,7,7,19,26,31,20,20,20,20,27,28,29,30,21,117,6,8,9,10,11,12,13,14,15,16,17,18,1,2,3,4,5,33		
 kTiles .block
 	back = 0
 	wall = 1
@@ -726,6 +727,11 @@ kTiles .block
 	pipe = 19
 	diss = 20
 	dissNoColide = 30
+	underHangStart = 31
+	underHang = 32
+	shadowOpenCorner = 33
+	sideShadow = 34
+	shadowCloserCorner = 35
 .bend
 kDoorClosed = 21
 kDoorOpen = 25
@@ -1313,7 +1319,7 @@ pltSingleTileNoLookup
 	pla
 	jsr renderTile
 	rts
-	
+		
 removeAllTilesOf
 	sta ZPTemp
 	lda CollTileX
@@ -1335,7 +1341,11 @@ _loop
 	lda tileMapTemp,x
 	cmp ZPTemp
 	bne _skip
+	txa
+	pha
 	jsr clearTile
+	pla
+	sta TempX
 _skip
 	inc CollTileX
 	inc CollTLX
@@ -1363,7 +1373,7 @@ _next
 	sta CollTLX
 	pla 
 	sta CollTileX
-	rts
+	rts	
 
 giveScore
 	asl a
