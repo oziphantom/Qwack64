@@ -182,7 +182,7 @@ checkSpriteToCharData .dstruct sCSTCCParams
  
 .cerror * > $400, "Too many variables"
 
-; .warn "Size of variables = ", $400-*
+.warn "Size of variables = ", $400-*
 
 *= $0801 ; 00 0C 08 0A 00 9E 20 32 30 36 34 00 00
 	.word (+), 2005 ;pointer, line number
