@@ -1,4 +1,3 @@
-.include "qwak_structs.asm"
 
 kVectors .block
 	charBase = $4000
@@ -39,6 +38,7 @@ kEntity .block
 	spider = $05
 	fish = $06
 	circler = $07
+	maxEntities = 31
 .bend
 
 kLevelSizeMax = kTileXCount*kTileYCount
@@ -99,6 +99,8 @@ kRaster .block
 	bottomRaster = 241
 .bend
 
+kSprBase = 64
+
 playerTempCol	= $d2
 ZPTemp			= $d3
 TempX			= $d4
@@ -136,14 +138,16 @@ CollTLY		= $de
 
 EntityDataPointer	= $e0
 CurrentEntity		= $e2
-EntIndexVIC			= $e3
+;EntIndexVIC			= $e3
 EntNum				= $e4
 CollisionResult		= $e5
 
 tileMapTemp = $c100 ; .fill 240
 
-variables = $0300
-* = $0300
+.include "qwak_structs.asm"
+
+variables = $0200
+* = $0200
 
 joyLeft	 .byte ?
 joyRight .byte ?
@@ -180,9 +184,10 @@ EntityData .dstruct sEntityData
 
 checkSpriteToCharData .dstruct sCSTCCParams 
  
-.cerror * > $400, "Too many variables"
+;.warn "Size of variables = ", *-variables
 
-.warn "Size of variables = ", $400-*
+;.cerror * > $400, "Too many variables"
+
 
 *= $0801 ; 00 0C 08 0A 00 9E 20 32 30 36 34 00 00
 	.word (+), 2005 ;pointer, line number
@@ -210,7 +215,7 @@ start
 		sta $d020
 		lda #1
 		sta $d023
-		lda #64
+		lda #kSprBase
 		sta mplex.sprp
 		lda #1
 		sta $d015
@@ -1635,7 +1640,7 @@ _storeX
 _e	rts
 	
 setEntitySprites
-	ldx #6
+	ldx # kEntity.maxEntities
 _l	lda EntityData.active,x
 	bne _active
 _c	dex
@@ -1646,12 +1651,13 @@ _active
 	tay
 	lda EntitySpriteStartFrame,y
 	sta mplex.sprp+1,x
+	sta EntityData.animBase,x
 	lda EntitySpriteColours,y
 	sta mplex.sprc+1,x
 	jmp _c
 	
 updateEntities
-	ldx #6
+	ldx # kEntity.maxEntities
 _l	lda EntityData.active,x
 	bne _active
 _c	dex
@@ -1659,10 +1665,29 @@ _c	dex
 	rts
 _active
 	stx CurrentEntity
-	txa 
-	asl a	
-	tay		
-	sty EntIndexVIC 
+	lda EntityData.type,x
+	tay
+	inc EntityData.animTimer,x
+	lda EntityData.animTimer,x
+	cmp #8
+	bne _notAnimUpdate
+	lda #0
+	sta EntityData.animTimer,x	
+	inc EntityData.animFrame,x
+	lda EntityData.animFrame,x
+	cmp FrameCountForEnt,y
+	bne _dontResetFrames
+	lda #0
+	sta EntityData.animFrame,x
+_dontResetFrames	
+	clc	
+	adc EntityData.animBase,x
+	sta mplex.sprp+1,x
+_notAnimUpdate 		
+;	txa 
+;	asl a	
+;	tay		
+;	sty EntIndexVIC 
 	lda EntityData.direction,x	
 	tay 
 	lda DirectionYLUT,y
@@ -1724,7 +1749,7 @@ _spiderNoMove
 
 _notBat 
 	ldx CurrentEntity	
-	ldy EntIndexVIC
+;	ldy EntIndexVIC
 	lda EntityData.direction,x		
 	beq _right	
 	cmp #1	
@@ -1836,8 +1861,9 @@ _fishFunc
 	cmp # kDirections.up
 	bne _fishDown
 	;fish up
-	lda #64+80
-	sta mplex.sprp+1,x ; will need to change to animation type
+	lda #kSprBase+80
+	;sta mplex.sprp+1,x ; will need to change to animation type
+	sta EntityData.animBase,x
 	lda mplex.ypos+1,x
 	cmp # kFishLimits.startTwo
 	bcc _fupNormal
@@ -1852,8 +1878,9 @@ _fupNormal
 	sta EntityData.direction,x
 	jmp _moveFish
 _fishDown
-	lda #64+84
-	sta mplex.sprp+1,x
+	lda #kSprBase+84
+	;sta mplex.sprp+1,x
+	sta EntityData.animBase,x
 	lda EntityData.entState,x
 	cmp #kSinJumpMax
 	bcc _checkMaxY
@@ -1885,9 +1912,9 @@ _move
 	lda #3
 	sta EntityData.movTimer,x
 ; check down
-	lda DirectionYLUT + kDirections.down
+	lda # 50-24 ; DirectionYLUT + kDirections.down
 	sta $fd
-	lda DirectionXLUT + kDirections.down
+	lda # 12 ;DirectionXLUT + kDirections.down
 	sta $fe
 	lda #0
 	sta CollisionResult
@@ -1908,7 +1935,7 @@ _move
 	bcs _springStore
 _resetJump
 	ldx CurrentEntity
-	ldy EntIndexVIC
+;	ldy EntIndexVIC
 	lda EntityData.direction,x
 	cmp #128
 	bcs _springSpeedSkip
@@ -2072,10 +2099,18 @@ SetNextEntDir
 	asl a
 	asl a
 	asl a
+	sta $fb
 	ora EntityData.direction,x
 	tay
 	lda NextDirectionLUT,y
 	sta EntityData.direction,x
+	ora $fb ; add the ent type offset to it
+	tay
+	lda BaseAnimeFrameForDir,y
+	sta EntityData.animBase,x
+	clc
+	adc EntityData.animFrame,x
+	sta mplex.sprp+1,x
 	rts
 	
 ; multiplexor
@@ -2586,7 +2621,7 @@ eirq	pla
 justRTI	rti
 	
 EntitySpriteColours		.byte 4,15,10,14,15,5,3,14
-EntitySpriteStartFrame	.byte 64+32,64+40,64+48,64+56,64+64,64+72,64+80,64+88
+EntitySpriteStartFrame	.byte kSprBase+32,kSprBase+40,kSprBase+48,kSprBase+56,kSprBase+64,kSprBase+72,kSprBase+80,kSprBase+88
 
 IndexToORLUT	.byte 1,2,4,8,16,32,64,128
 IndexToANDLUT	.byte 254,253,251,247,239,223,191,127
@@ -2603,6 +2638,17 @@ NextDirectionLUT
 .byte 3,3,1,1,0,0,0,0 ; spider
 .byte 0,0,0,0,0,0,0,0 ; fish - not used
 .byte 0,0,0,0,0,0,0,0 ; flying thing - not used
+BaseAnimeFrameForDir
+.byte kSprBase+32,kSprBase+32,kSprBase+32,kSprBase+32,0,0,0,0 ; heli
+.byte kSprBase+40,kSprBase+40,kSprBase+40,kSprBase+40,0,0,0,0 ; spring
+.byte kSprBase+52,kSprBase+52,kSprBase+48,kSprBase+48,0,0,0,0 ; worm
+.byte kSprBase+60,kSprBase+60,kSprBase+56,kSprBase+56,0,0,0,0 ; bat
+.byte kSprBase+68,kSprBase+68,kSprBase+64,kSprBase+64,0,0,0,0 ; ghost
+.byte kSprBase+72,kSprBase+72,kSprBase+72,kSprBase+72,0,0,0,0 ; spider
+.byte kSprBase+80,kSprBase+80,kSprBase+84,kSprBase+84,0,0,0,0 ; fish 
+.byte kSprBase+92,kSprBase+92,kSprBase+88,kSprBase+88,0,0,0,0 ; flying thing 
+FrameCountForEnt
+.byte 8,8,4,4,4,8,4,4
 
 SinJumpTable
 .char -8, -6, -5, -4, -5, -3
