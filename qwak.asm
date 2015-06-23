@@ -258,6 +258,9 @@ start
 -		sta kVectors.charBase + ( 24*40 ),x
 		dex
 		bpl -
+		lda #5
+		sta GameData.lives
+		jsr pltLives
 		; main loop
 -		lda mplex.lsbtod	
 		beq -	
