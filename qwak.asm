@@ -1754,6 +1754,12 @@ _spiderNoMove
 	jmp _next	
 
 _notBat 
+	lda CurrentEntity
+	clc
+	adc #1 ; convert ent num to sprite num
+	jsr didIHitSomething ; if hit something then returns 1
+	ora CollisionResult 
+	sta CollisionResult
 	ldx CurrentEntity	
 ;	ldy EntIndexVIC
 	lda EntityData.direction,x		
@@ -1769,6 +1775,7 @@ _down
 	inc mPlex.ypos+1,x 
 	jmp _next		
 _dnotsafe
+	dec mPlex.ypos+1,x 
 	jsr SetNextEntDir	
 	jmp _next	
 		
@@ -1793,6 +1800,7 @@ _rightStore2
 	sta mPlex.xpos+1,x 
 	jmp _next		
 _rnotsafe
+	dec mPlex.xpos+1,x 
 	jsr SetNextEntDir
 	jmp _next
 	
@@ -1807,6 +1815,7 @@ _up
 	beq _checkSpider
 	jmp _next		
 _unotsafe
+	inc mPlex.ypos+1,x 
 	jsr SetNextEntDir
 	jmp _next
 
@@ -1848,6 +1857,7 @@ _storeLeft2
 	sta mPlex.xpos+1,x	 
 	jmp _next		
 _lnotsafe
+	inc mPlex.xpos+1,x
 	jsr SetNextEntDir
 	jmp _next
 	
