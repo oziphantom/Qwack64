@@ -264,8 +264,11 @@ start
 		dec mplex.lsbtod	
 ;	inc $d020
 ;	inc $d020
-		
-		lda PlayerData.dead
+		jsr buildSpriteCollisionTable
+		lda #0
+		jsr DidIHitSomething
+		ora PlayerData.dead
+		;lda PlayerData.dead
 		beq +
 		lda PlayerData.hasShield
 		bne +
@@ -2112,6 +2115,110 @@ SetNextEntDir
 	adc EntityData.animFrame,x
 	sta mplex.sprp+1,x
 	rts
+	
+SortIndexA .byte ?
+SortIndexB .byte ?
+CollisionTableIndex .byte ?
+CollisionTableLo .fill 16
+CollisionTableHi .fill 16
+SortAY .byte ?
+SortAMSB .byte ?
+ActualIndexA .byte ?
+AcutalIndexB .byte ?
+buildSpriteCollisionTable
+	lda #0	
+	sta SortIndexA	
+	sta CollisionTableIndex
+	lda #1	
+	sta SortIndexB	
+_loopA	
+	ldx SortIndexA	
+	lda mplex.sort,x	
+	sta ActualIndexA	
+	tay	
+	lda mplex.ypos,y	
+	cmp #$ff	
+	beq sortAllDone	
+	sta SortAY	
+_loopB
+	ldx SortIndexB
+	lda mplex.sort,x
+	sta AcutalIndexB
+	tay
+	lda mplex.ypos,y
+	cmp #$ff
+	beq _doneB
+	sec
+	sbc SortAY
+	clc
+	cmp #14
+	bcs _yNotInRange
+	jsr yInRange
+_yNotInRange
+	inc SortIndexB
+	bne _loopB
+_doneB
+	lda SortIndexA
+	clc
+	adc #1
+	sta SortIndexA
+	adc #1
+	sta SortIndexB
+	bne _loopA
+sortAllDone
+	rts
+yInRange
+	ldy ActualIndexA
+	lda mplex.xpos,y
+	sta SortAY
+	ldy AcutalIndexB
+	lda mplex.xpos,y
+	sta SortAMSB
+	lda SortAY
+	cmp SortAMSB
+	bcc _x2smaller
+	; x1 is smaller
+	lda SortAY
+	sec
+	sbc SortAMSB
+	cmp #14
+	bcs sortAllDone  ; just returns back to loops above
+	bcc xInRange
+_x2smaller	
+	lda SortAMSB
+	sec
+	sbc SortAY
+	cmp #14
+	bcs sortAllDone  ; just returns back to loops above	
+xInRange
+	ldy CollisionTableIndex
+	lda ActualIndexA
+	sta CollisionTableLo,y
+	lda AcutalIndexB
+	sta CollisionTableHi,y
+	iny
+	sty CollisionTableIndex
+	rts
+	
+didIHitSomething
+	sta ZPTemp
+	ldx CollisionTableIndex
+	beq _no
+	dex ; sub 1 to get first index
+_l	lda CollisionTableLo,x
+	cmp ZPTemp
+	beq _did
+	lda CollisionTableHi,x
+	cmp ZPTemp
+	beq _did
+	dex
+	bpl _l
+_no
+	lda #0
+	rts
+_did
+	lda #1
+	rts		
 	
 ; multiplexor
 setirq
