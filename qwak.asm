@@ -427,18 +427,29 @@ _jumpFall
 		ldx # kJumpIndexs.floaty
 		bne _incD
 			
-_noUp	lda PlayerData.onGround 
-		and PlayerData.hasJumped	
-		beq _cb 
-		lda #0	
-		sta PlayerData.hasJumped	
+_noUp	lda PlayerData.onGround
+		bne _ong 
+		lda PlayerData.hasJumped
+		beq _ong
+		lda PlayerData.yDeltaAccum+1
+		bpl _cb
+		cmp #$ff
+		beq _cb
+		lda #$80	
+		;sta PlayerData.hasJumped	
+		sta PlayerData.yDeltaAccum	
+		lda #$FF
+		sta PlayerData.yDeltaAccum+1
 _cb		lda PlayerData.onGround		; are we on the ground	
-		bne _ong
+		bne _downOne
 		ldx # kJumpIndexs.normal
 _incD	jsr incPlayerYDeltaAndReturn	; no, we are in gravity so fall
 		sta checkSpriteToCharData.yDeltaCheck
 		rts
-_ong	lda #1
+_ong	lda #0
+		sta PlayerData.hasJumped
+_downOne
+		lda #1
 		sta checkSpriteToCharData.yDeltaCheck
 		rts
 
@@ -994,7 +1005,7 @@ _YFF
 	sta PlayerData.onGround
 	sta PlayerData.yDeltaAccum
 	lda #0
-;	sta PlayerData.hasJumped 
+	;sta PlayerData.hasJumped 
 	sta PlayerData.isFalling
 	sta PlayerData.yDeltaAccum + 1
 _noOnGround
