@@ -9,6 +9,11 @@ kSprites .block
 	fish = kSprBase+80
 	spiderLeft = kSprBase+72
 	spiderRight = kSprBase+74
+	springNormal = kSprBase+40
+	springCompress = kSprBase+41
+	springExpand = kSprBase+42
+	springFull = kSprBase+43
+	springFall = kSprBase+44
 .bend
 kSpiderValues .block
 	yFallDelta = 1
@@ -106,6 +111,13 @@ kRaster .block
 mplex .block 
 	kMaxSpr = $1f
 .bend
+kBlocks .block
+	back = 0	
+	dropShadow = 2	
+	bottomRight = 3
+	leftShadow = 5
+	topLeftCorner = 35
+.bend
 
 .include "qwak_structs.asm"
 
@@ -139,10 +151,12 @@ ZPTemp				.byte ?
 ZPTemp2				.byte ?
 ZPTemp3				.byte ?
 ZPTemp4				.byte ?
+ZPTemp5				.byte ?
 TempX				.byte ?
 ActiveTileIndex		.byte ?
 ActiveTile			.byte ?
 
+.cerror * > $FF, "Too many ZP variables"
 ;----------------------------
 ; Variables
 ;----------------------------
@@ -256,6 +270,10 @@ start
 		sta mplexBuffer.sprc
 		;lda #%00010000
 		;sta $d011
+		jsr copyStuff
+		jsr buildBackAndShadowChars
+		jsr BuildDisolveChars
+		jsr unpackSprites
 RESET
 		; clear Mplex 
 		ldx #$00	  ;init x with 00
@@ -698,103 +716,206 @@ _exitPos
 		jmp _cont
 
 addShadowsToMap				
-		rts ; this needs to be fixed 			
-		lda #<tileMapTemp
-		sta $fe
-		lda #>tileMapTemp
-		sta $ff
-		lda #12
-		pha
-		ldx #0
-_row	ldy #0
-_loop	; read in 16 bytes		
-		lda ($fe),y					
-		cmp toolToTileLUT+1				
-		beq _checkit				
-		cmp toolToTileLUT+2			
-		beq _checkit			
-_done	iny				
-		cpy #16				
-		bne _loop				
-		clc		
-		lda $fe		
-		adc #16		
-		sta $fe		
-		lda $ff		
-		adc #0		
-		sta $ff		
-		inx 
-		pla 
-		sec 
-		sbc #1	
-		cmp #0	
-		pha 
-		bne _row	
-		pla 
-		rts					
-_checkit cpx #11				
-		beq _skipBelowCheck				
-		tya				
-		pha				
-		clc				
-		adc #16				
-		tay				
-		lda ($fe),y				
-		cmp #4				
-		bne _skipBelowCheckpla				
-		lda #6				
-		sta ($fe),y				
-_skipBelowCheckpla						
-		pla						
-		tay						
-_skipBelowCheck				
-		cpy #15 ; last column		
-		beq _done		
-		iny		
-		lda ($fe),y		
-		cmp #4 ; pure empty		
-		bne _checkBottom		
-		lda #9		
-		sta ($fe),y		
-_done2	dey		
-		jmp _done		
-_checkBottom				
-		cmp #6				
-		bne _done2				
-		lda #10				
-		sta ($fe),y				
-		jmp _done2				
+	ldy #0	
+	sty TempX	
+-	ldy TempX
+	jsr tileIsSafeToChange
+	bcc _next
+	jsr calcBCDEforTileY
+_next	
+	inc TempX
+	lda TempX
+	cmp #kLevelSizeMax
+	bne -
+	rts
+	
+tileIsWall						
+	lda tileMapTemp,y						
+	beq	_no					
+	cmp #kTiles.wall4+1						
+	bcc _yes						
+	cmp #kTiles.diss						
+	bne _no												
+	clc						
+_yes						
+	rts ; carry is clear						
+_no sec						
+	rts ; carry is set						
 						
+tileIsSafeToChange					
+	lda tileMapTemp,y					
+	beq _yes ; 0 is safe					
+	cmp #kTiles.underHangStart					
+	bcs _yes					
+	rts ; carry is clear					
+_yes					
+	sec					
+	rts					
+;  BCD
+;  EA
+;   H
+; A is tile we are testing
+;  BCDE H
+;  1110   = under hang
+;  1100   = under hang right end
+;  0110   = under hanr left  end
+;  0001 0 = left wall top end
+;  1001   = left wall
+;  1000   = 35
+;  11X1   = top left
+;  0XX1 1 = bottom left					
+calcBCDEforTileY				
+	sty ZPTemp				
+	sty ZPTemp2				
+	tya			
+	and #15			
+	bne _canDoLeft			
+	lda #$80		; can'r do left on Negative				
+	bne +			
+_canDoLeft			
+	lda #0			
++	sta ZPTemp4			
+	lda ZPTemp			
+	and #15			
+	cmp #15 			
+	bne _canDoRight			
+	lda #$40		 ; can't do right on Overflow	
+	sta ZPTemp4			
+_canDoRight			
+END_LEFT_RIGHT_CHECK	
+	lda #1+2+4 ; first 3 are empty ( it is inverted later)				
+	sta ZPTemp3
+	ldy ZPTemp	 	
+	cpy #kTileXCount				
+	bcc _doneFirstRow ; if it is the first row than ALL of above is not solid						
+	lda #0						
+	sta ZPTemp3						
+	tya					
+	sec					
+	sbc #kTileXCount+1 ; so get -1x,-1y					
+	sta ZPTemp2
+	tay
+	bit ZPTemp4 ; test to see if we can do right
+	bmi _noB	; no then skip B					
+	jsr tileIsWall					
+	rol ZPTemp3					
+	jmp _testC				
+_noB					
+	sec			; if there is no B then make it clear	
+	rol ZPTemp3 				
+_testC		
+	iny 					
+	jsr tileIsWall				
+	rol ZPTemp3				
+	iny				
+	bit ZPTemp4			
+	bvs _noRight			
+	jsr tileIsWall			
+	rol ZPTemp3			
+	jmp _doneFirstRow			
+_noRight				
+	sec ; make it as 1 so it gets 0 later		
+	rol ZPTemp3		
+_doneFirstRow				
+	bit ZPTemp4				
+	bmi _noE ; check negative flag				
+	ldy ZPTemp				
+	dey				
+	jsr tileIsWall				
+	rol ZPTemp3				
+	jmp DoIndexCheck			
+_noE			
+	sec ; make it 1 so it gets 0 later			
+	rol ZPTemp3			
+DoIndexCheck			
+	lda ZPTemp3		
+	eor #$0F ;
+	tay 		
+BCDEYVALUECHECK
+	lda BCDELUT,y		
+	bmi _checkH	
+_writeMap	
+	ldy ZPTemp		
+	sta tileMapTemp,y		
+	rts		
+_checkH				
+	lda ZPTemp		
+	clc		
+	adc #kTileXCount		
+	tay		
+	jsr tileIsWall		
+	bcs _HNotWall		
+	lda #kTiles.back		
+_HNotWall			
+	lda #kTiles.sideShadow					
+	jmp _writeMap			
+				
+BCDELUT	.byte $00							; 0000
+		.byte kTiles.sideShadow				; 0001	
+		.byte $00							; 0010
+		.byte kTiles.sideShadow				; 0011
+		.byte kTiles.underHangStart			; 0100			
+		.byte kTiles.topLeftCorner			; 0101
+		.byte kTiles.underHangStart			; 0110		
+		.byte kTiles.sideShadow				; 0111
+		.byte kTiles.shadowOpenCorner		; 1000				
+		.byte kTiles.middlesideShadow		; 1001		
+		.byte $00							; 1010
+		.byte kTiles.sideShadow				; 1011			
+		.byte kTiles.underHang				; 1100				
+		.byte kTiles.shadowOpenCorner		; 1101				
+		.byte kTiles.underHang				; 1110				
+		.byte kTiles.topLeftCorner			; 1111				
+								
 		; back,wall,wall1,wall2,wall3,wall4,spike,flower,fruit,key1,key2,key3,key4,shield,spring,potion,egg,exit,player,diss		
-toolToTileLUT .byte 0,7,7,7,7,7,19,26,31,20,20,20,20,27,28,29,30,21,117,6,8,9,10,11,12,13,14,15,16,17,18,1,2,3,4,5,33		
+toolToTileLUT 	.byte 000
+				.byte 007,007,007,007,007
+				.byte 019,026,031
+				.byte 020,020,020,020
+				.byte 027,028,029,030
+				.byte 021,117
+				.byte 006
+				.byte 008,009,010,011,012
+				.byte 013,014,015,016,017
+				.byte 018
+				.byte 001,002,003,004,005
+				.byte 033		
 kTiles .block
 	back = 0
+	
 	wall = 1
 	wall1 = 2
 	wall2 = 3
-	wall3 = 4
+	wall3 = 4	
 	wall4 = 5
+	
 	spike = 6
 	flower = 7
 	fruit = 8
-	key1 = 9
+	
+	key1 = 9	
 	key2 = 10
 	key3 = 11
 	key4 = 12
+	
 	shield = 13
 	spring = 14
 	potion = 15
 	egg = 16
+	
 	exit = 17
 	player = 18
+	
 	pipe = 19
 	diss = 20
 	dissNoColide = 30
+	
 	underHangStart = 31
 	underHang = 32
 	shadowOpenCorner = 33
 	sideShadow = 34
-	shadowCloserCorner = 35
+	middlesideShadow = 35
+	topLeftCorner = 36
 .bend
 kDoorClosed = 21
 kDoorOpen = 25
@@ -962,10 +1083,10 @@ _joyRight
 		jmp _checkFire
 	
 
-CollisionBoxesX .byte 02,02 
-CollisionBoxesW .byte 13,13 
-CollisionBoxesY .byte 00,2 
-CollisionBoxesH .byte 14,16 
+CollisionBoxesX .byte 02,02,02 
+CollisionBoxesW .byte 13,13,13 
+CollisionBoxesY .byte 00,02,00 
+CollisionBoxesH .byte 14,16,20 
 	
 newCollision
 	ldx CollideSpriteToCheck
@@ -1252,7 +1373,25 @@ _c	lda TickDowns.dissBlocks
 	ldx ActiveTileIndex
 	inc tileMapTemp,x
 	lda tileMapTemp,x
-	jmp pltSingleTileNew
+	cmp #kTiles.diss+9
+	php
+	jsr pltSingleTileNew
+	plp
+	bne _exit
+	lda ActiveTileIndex
+	sta Pointer4
+	clc
+	adc #16
+	cmp #kLevelSizeMax
+	bcs _exit
+	sta ActiveTileIndex
+	tay
+	jsr tileIsSafeToChange
+	bcc _exit
+	jsr clearTileNew
+	lda Pointer4
+	sta ActiveTileIndex
+	rts
 	
 checkActionTile
 	sta ActiveTile ; for later
@@ -1288,7 +1427,7 @@ flowerFunc
 	jsr giveScore
 	inc GameData.flowers
 	lda GameData.flowers
-	cmp #5
+	cmp #8
 	bne _exit
 	lda #0
 	sta GameData.flowers
@@ -1730,9 +1869,13 @@ readTileMapTemp
 	rts
 	
 clearTileNew
-	ldx ActiveTileIndex
+	ldy ActiveTileIndex
 	lda # kTiles.back
-	sta tileMapTemp,x
+	sta tileMapTemp,y
+	jsr calcBCDEforTileY ; this sets it to be what it should be shadow wise
+	jsr pltSingleTileNew
+	ldy ActiveTileIndex
+	lda tileMapTemp,y
 pltSingleTileNew
 	tax
 	lda toolToTileLUT,x
@@ -1774,14 +1917,37 @@ pltSingleTileNoLookup
 .endc		
 		
 removeAllTilesOf
-	sta ZPTemp
+	sta ZPTemp5
 	ldx #0
 	stx ActiveTileIndex
 _loop
 	lda tileMapTemp,x
-	cmp ZPTemp
+	cmp ZPTemp5
 	bne _next
 	jsr clearTileNew
+	lda ActiveTileIndex
+	sta Pointer4
+	inc ActiveTileIndex
+	ldy ActiveTileIndex
+	cpy #kLevelSizeMax
+	beq _restoreACI
+	jsr tileIsSafeToChange
+	bcc _skipLeft
+	jsr clearTileNew	
+_skipLeft	
+	lda ActiveTileIndex
+	clc
+	adc #15 ; it is + 1 already
+	cmp #kLevelSizeMax
+	beq _restoreACI
+	sta ActiveTileIndex
+	tay
+	jsr tileIsSafeToChange
+	bcc _restoreACI
+	jsr clearTileNew
+_restoreACI
+	lda Pointer4
+	sta ActiveTileIndex
 _next	
 	inc ActiveTileIndex
 	ldx ActiveTileIndex
@@ -1881,7 +2047,8 @@ _skipDoorCheck
 	cmp # kTiles.dissNoColide
 	beq _exitSafe
 	cmp # kTiles.diss
-	bcs _notSafe
+	;bcs _notSafe
+	bcs _checkNotShadow
 	cmp # kTiles.wall
 	bcc _exitSafe
 	cmp # kTiles.spike
@@ -1893,6 +2060,10 @@ _exitSafe
 	clc
 _exit
 	rts
+_checkNotShadow
+	cmp #kTiles.dissNoColide
+	bcc _notsafe
+	bcs _exitSafe
 	
 plotStatusArea
 	lda #<kVectors.charBase + 32 
@@ -2121,11 +2292,18 @@ EntitiesActive
 +	cmp #kEntity.circler	
 	bne +	
 	jmp circlerFunc	
++	cmp #kEntity.spring
+	bne +
+	jmp springEntFunc
 +	jsr updateEntAnimAndSetSprite
 	lda CollFrameForEnt,y	
 	sta CollideSpriteBoxIndex	
 	inx
 	stx CollideSpriteToCheck
+	lda #<handleEntCollisionResult
+	sta Pointer1
+	lda #>handleEntCollisionResult
+	sta Pointer1+1
 	ldx CurrentEntity
 	lda EntityData.direction,x	
 	tax
@@ -2146,6 +2324,7 @@ entRight
 	sta checkSpriteToCharData.xDeltaCheck
 	lda #0
 	sta checkSpriteToCharData.yDeltaCheck
+entRightNoDelta
 	jsr newCollision
 	lda CollideCharTRC
 	jsr checkSolidTile
@@ -2153,13 +2332,14 @@ entRight
 	lda CollideCharBRC
 	jsr checkSolidTile
 	rol CollisionResult
-	jmp handleEntCollisionResult
+	jmp (Pointer1)
 	
 entUp	
 	lda #$00	
 	sta checkSpriteToCharData.xDeltaCheck
 	lda #$ff
 	sta checkSpriteToCharData.yDeltaCheck	
+entUpNoDelta
 	jsr newCollision
 	lda CollideCharTLC
 	jsr checkSolidTile
@@ -2167,13 +2347,14 @@ entUp
 	lda CollideCharTRC
 	jsr checkSolidTile
 	rol CollisionResult
-	jmp handleEntCollisionResult
+	jmp (Pointer1)
 	
 entLeft	
 	lda #$ff	
 	sta checkSpriteToCharData.xDeltaCheck
 	lda #0
 	sta checkSpriteToCharData.yDeltaCheck
+entLeftNoDelta
 	jsr newCollision
 	lda CollideCharTLC
 	jsr checkSolidTile
@@ -2181,13 +2362,14 @@ entLeft
 	lda CollideCharBLC
 	jsr checkSolidTile
 	rol CollisionResult
-	jmp handleEntCollisionResult
+	jmp (Pointer1)
 	
 entDown	
 	lda #$00	
 	sta checkSpriteToCharData.xDeltaCheck
 	lda #$01
 	sta checkSpriteToCharData.yDeltaCheck
+entDownNoDelta
 	jsr newCollision
 	lda CollideCharBLC
 	jsr checkSolidTile
@@ -2195,7 +2377,7 @@ entDown
 	lda CollideCharBRC
 	jsr checkSolidTile
 	rol CollisionResult
-	jmp handleEntCollisionResult	
+	jmp (Pointer1)	
 
 entFishFunc
 	dec EntityData.movTimer,x
@@ -2426,6 +2608,142 @@ _cirStore
 	jsr updateEntAnimAndSetSprite
 	jmp nextEnt		
 			
+springEntFunc
+	lda EntityData.movTimer,x
+	sec 
+	sbc #1
+	bmi _move
+	sta EntityData.movTimer,x
+	jmp nextEnt
+_move
+	lda #3
+	sta EntityData.movTimer,x		
+	; update Y component	
+	lda EntityData.entState,x	
+	sta ZPTemp
+	tay	
+	lda SinJumpTable,y	
+	sta checkSpriteToCharData.yDeltaCheck	
+	lda #$00	
+	sta checkSpriteToCharData.xDeltaCheck	
+	sta CollisionResult	
+	lda #2 ; this might change per frame	
+	sta CollideSpriteBoxIndex	
+	inx ; current entity
+	stx CollideSpriteToCheck	
+	lda #<springEntYCollideEnd
+	sta Pointer1
+	lda #>springEntYCollideEnd
+	sta Pointer1+1
+	lda ZPTemp
+	cmp #kSinJumpFall
+	bcs _falling
+	; rising
+	lda #kSinJumpFall ; start falling
+	sta ZPTemp2
+	jmp entUpNoDelta
+_falling
+	lda #0				; start jumping again
+	sta ZPTemp2
+	jmp entDownNoDelta
+springEntYCollideEnd
+	lda CollisionResult
+	bne _hit
+	; didn't hit so carry on
+	ldx CurrentEntity
+	lda mplexBuffer.ypos+1,x
+	clc
+	adc checkSpriteToCharData.yDeltaCheck
+	sta mplexBuffer.ypos+1,x
+	lda EntityData.entState,x
+	clc
+	adc #1
+	cmp #kSinJumpMax
+	bcc _store
+	lda #0
+_store
+	sta EntityData.entState,x
+	jmp springEntHandleX
+_hit
+	lda ZPTemp2
+	ldx CurrentEntity
+	sta EntityData.entState,x
+springEntHandleX
+	lda #0
+	sta checkSpriteToCharData.yDeltaCheck
+	sta CollisionResult
+	lda #<springEntXCollideEnd
+	sta Pointer1
+	lda #>springEntXCollideEnd
+	sta Pointer1+1
+	lda EntityData.direction,x
+	sta ZPTemp
+	clc
+	adc #4
+	tay
+	lda SpringDirectionToDeltaLUT,y
+	sta checkSpriteToCharData.xDeltaCheck
+	bmi _left
+	jmp entRightNoDelta
+_left 
+	jmp entLeftNoDelta	
+springEntXCollideEnd		
+	ldx CurrentEntity		
+	lda ZPTemp	
+	bmi springEntXLeft
+	lda CollisionResult		
+	beq _noCollideRight		
+	lda #256-1		
+	sta EntityData.direction,x 		 
+	jmp nextEnt
+_noCollideRight
+	lda mplexBuffer.xpos+1,x
+	clc
+	adc checkSpriteToCharData.xDeltaCheck
+	sta mplexBuffer.xpos+1,x
+	lda EntityData.direction,x 	
+	clc
+	adc #1
+	cmp #4
+	bne _noClip
+	lda #3
+_noClip	
+	sta EntityData.direction,x
+	jmp nextEnt		
+springEntXLeft	
+	lda CollisionResult		
+	beq _noCollideLeft		
+	lda #0		
+	sta EntityData.direction,x 		 
+	jmp springEndAnimate
+_noCollideLeft
+	lda mplexBuffer.xpos+1,x
+	clc
+	adc checkSpriteToCharData.xDeltaCheck
+	sta mplexBuffer.xpos+1,x
+	lda EntityData.direction,x 	
+	sec
+	sbc #1
+	cmp #256-5
+	bne _noClip
+	lda #256-4
+_noClip	
+	sta EntityData.direction,x
+springEndAnimate
+	ldx CurrentEntity
+	lda EntityData.entState,x
+	tay
+	cmp #kSinJumpFall
+	bcs _fall
+	lda	SpringFrameFrameTable,y
+	sta mplexBuffer.sprp+1,x
+	jmp nextEnt
+_fall
+	lda #kSprites.springFall
+	sta EntityData.animBase,x
+	jsr updateEntAnimAndSetSprite
+	jmp nextEnt
+
 handleEntCollisionResult	
 	ldx CurrentEntity	
 	lda EntityData.type,x
@@ -2506,7 +2824,7 @@ _dontResetFrames
 _notAnimUpdate 		
 	rts
 
-	
+FAKE_SPLIT	
 ; {{{
 .comment
 	lda EntityData.direction,x	
@@ -3718,8 +4036,343 @@ eirq	pla
 		pla
 justRTI	rti
 	
+
+buildBackAndShadowChars
+		lda #0
+		sta ZPTemp
+_loop
+		; make a clean copy
+		ldx #31
+-		lda BackChars1,x
+		sta fileChars,x
+		sta tileMapTemp,x
+		dex 
+		bpl -
+		; build the char offset
+		ldx ZPTemp
+		lda ShadowTileLUT,x
+		bmi _next
+		asl a
+		asl a
+		asl a
+		sta ZPTemp2
+		; build the pat offset
+		lda ShadowTilePatLUT,x
+		asl a
+		asl a
+		sta ZPTemp3
+		; or first 2 bytes 4 times to upper half
+		ldx ZPTemp2
+		ldy ZPTemp3
+		jsr or2Bytes2Shadow
+		; or second 2 bytes 4 times to lower half
+		iny
+		iny
+		jsr or2Bytes2Shadow		
+		; copy char to dest
+		lda ZPTemp
+		asl a
+		asl a
+		asl a
+		tax
+		ldy ZPTemp2
+		lda #7
+		sta ZPTemp3
+-		lda tileMapTemp,y
+		sta fileChars+(4*8),x
+		iny
+		inx
+		dec ZPTemp3
+		bpl -
+		; next char set
+_next
+		inc ZPTemp
+		lda ZPTemp
+		cmp #size(ShadowTileLUT)
+		bne _loop
+		rts
+				
+
+or2Bytes2Shadow
+		lda #0
+		sta ZPTemp4
+-		lda tileMapTemp,x
+		ora ShadowMaskBytes,y
+		sta tileMapTemp,x
+		inx
+		lda tileMapTemp,x
+		ora ShadowMaskBytes+1,y
+		sta tileMapTemp,x
+		inx
+		lda ZPTemp4
+		clc
+		adc #2
+		sta ZPTemp4
+		cmp #4
+		bne -
+		rts			
+
+BuildDisolveChars
+		ldx #31
+-		lda BlockChars1,x
+		sta tileMapTemp,x
+		sta tileMapTemp+32,x
+		dex
+		bpl -
+		lda #0
+		sta Pointer1
+disolveANDORChar 		
+		ldx Pointer1
+		lda DisolveSourceCharOffsetLUT,x
+		sta ZPTemp ; source char
+		lda DisolveDestCharOffsetLUT,x
+		sta ZPTemp2 ; dest char
+		lda DisolveANDORROffsetLUT,x
+		tay 
+		clc
+		adc #8
+		sta ZPTemp4
+-		ldx ZPTemp
+		lda tileMapTemp,x
+		and DisolveBlocksANDLUT,y
+		ora DisolveBlocksORLUT,y
+		ldx ZPTemp2
+		sta tileMapTemp,x
+		inc ZPTemp
+		inc ZPTemp2
+		iny
+		cpy ZPTemp4
+		bne -		
+		inc Pointer1
+		lda Pointer1
+		cmp #size(DisolveANDORROffsetLUT)
+		bne disolveANDORChar
+		ldx #0
+-		lda tileMapTemp,x
+		sta fileChars+(16*8),x
+		inx
+		cpx #24*8
+		bne -
+		ldx #(8*4)-1
+-		lda EmptyDisolveChars,x
+		sta fileChars+(12*8),x
+		dex
+		bpl -
+		rts		
+			
+unpackSprites	
+		lda #<fileSprites	
+		sta Pointer1	
+		lda #>fileSprites	
+		sta Pointer1+1	
+		lda #<PackedSprites	
+		sta Pointer2	
+		lda #>PackedSprites	
+		sta Pointer2+1	
+		lda #0; (15*8)+4;size(SpriteUnpackTBL)
+		sta ZPTemp3
+		lda #3
+		sta Pointer3
+		lda #%1000  ; this if the last byte for patchup
+		sta Pointer4
+spriteUnpackLook
+		ldx ZPTemp3  
+		lda SpriteUnpackTBL,x
+		cmp #0
+		beq copyFullSprite
+		cmp #1
+		beq copy16x16Sprite
+		bne copy16x21Sprite
+nextSpriteUnpack
+		lda ZPTemp3
+		cmp #(15*8)/4
+		beq _endPatchUp
+		dec Pointer3
+		bpl spriteUnpackLook
+		lda #3
+		sta Pointer3
+		inc ZPTemp3
+		lda ZPTemp3
+		cmp #(15*8)/4
+		bne spriteUnpackLook
+_endPatchUp		
+		lda Pointer4		
+		beq _exit		
+		lsr Pointer4		
+		bcc copyFullSprite		
+		bcs copy16x16Sprite		
+_exit	rts		
+			
+advancePonterXByZPTemp	
+		clc	
+		lda Pointer1,x	
+		adc ZPTemp	
+		sta Pointer1,x	
+		lda Pointer1+1,x	
+		adc #0	
+		sta Pointer1+1,x	
+		rts	
+			
+copyFullSprite	
+		ldy #64	
+		sty ZPTemp
+-		lda (Pointer2),y	
+		sta (Pointer1),y	
+		dey	
+		bpl -	
+		ldx #0
+		jsr advancePonterXByZPTemp ; shift source and dest by 64 bytes
+		ldx #2
+		jsr advancePonterXByZPTemp
+		jmp nextSpriteUnpack	
+		
+copy16x16Sprite
+		lda #16
+		sta ZPTemp2
+		lda #((21-16)*3)+1
+		sta ZPTemp4
+sprite2To3Unpack
+-		ldy #0
+		lda (Pointer2),y
+		sta (Pointer1),y
+		iny
+		lda (Pointer2),y
+		sta (Pointer1),y
+		lda #3
+		sta ZPTemp
+		ldx #0
+		jsr advancePonterXByZPTemp
+		dec ZPTemp
+		ldx #2
+		jsr advancePonterXByZPTemp
+		dec ZPTemp2
+		bne -
+		ldx #0
+		lda ZPTemp4
+		sta ZPTemp
+		jsr advancePonterXByZPTemp
+		jmp nextSpriteUnpack
+
+copy16x21Sprite			
+		lda #21
+		sta ZPTemp2			
+		lda #1			
+		sta ZPTemp4			
+		jmp sprite2To3Unpack		
+			
+copyStuff	
+		ldx #size(CopyDestLoLUT)-1	
+-		lda CopyDestLoLUT,x	
+		sta Pointer1	
+		lda CopyDestHiLUT,x	
+		sta Pointer1+1	
+		lda CopySrcLoLUT,x
+		sta Pointer2	
+		lda CopySrcHiLUT,x	
+		sta Pointer2+1	
+		lda CopyBytes,x	
+		tay
+-		lda (Pointer2),y	
+		sta (Pointer1),y	
+		dey	
+		bne -	
+		dex	
+		bpl --	
+		rts	
+			
+CopyDestLoLUT .byte <fileChars+(44*8),<fileChars+(44*8)    ,<fileChars+(193*8),<fileChars+(193*8)    ,<fileChars+(12*8) ,<fileChars+(40*8)	
+CopyDestHiLUT .byte	>fileChars+(44*8),(>fileChars+(44*8))+1,>fileChars+(193*8),(>fileChars+(193*8))+1,>fileChars+(12*8) ,>fileChars+(40*8)
+CopySrcLoLUT  .byte	<LowerFixedChars ,<LowerFixedChars     ,<UpperFixedChars  ,<UpperFixedChars      ,<EmptyDisolveChars,<AppleChars
+CopySrcHiLUT  .byte >LowerFixedChars ,(>LowerFixedChars)+1 ,>UpperFixedChars  ,(>UpperFixedChars)+1  ,>EmptyDisolveChars,>AppleChars	
+CopyBytes	  .byte 000          ,size(LowerFixedChars)-255,000          ,size(UpperFixedChars)-255  ,32				,32
+				
+ShadowTileLUT    .byte 0,1,0,0,0,0,2,0		
+ShadowTilePatLUT .byte 0,1,5,1,6,3,4,4		
+ShadowMaskBytes
+		.byte %10101111 ; pat 0
+		.byte %01011111
+		.byte %10101010
+		.byte %01010101
+		
+		.byte %11111111 ; pat 1
+		.byte %11111111
+		.byte %10101010
+		.byte %01010101
+		
+		.byte %11111010 ; pat 2
+		.byte %11110101
+		.byte %10101010
+		.byte %01010101
+		
+		.byte %10100000 ; pat 3
+		.byte %01010000
+		.byte %11111010
+		.byte %11110101
+		
+		.byte %11111010 ; pat 4
+		.byte %11110101
+		.byte %11111010
+		.byte %11110101
+		
+		.byte %11111111 ; pat 5
+		.byte %11111111
+		.byte %11111010
+		.byte %11110101
+		
+		.byte %11111010 ; pat 6
+		.byte %11110101
+		.byte %10101010
+		.byte %01010101
+		
+DisolveBlocksORLUT
+		.byte 0,0,0,0,0,0,0,0
+		.byte %00110011
+		.byte %11001100
+		.byte %00000000
+		.byte %01000100
+		.byte %00010001
+		.byte %01010101
+		.byte %01010101
+		.byte %01010101
+		.byte %01010101
+		.byte %01010101
+		.byte %01010101
+		.byte %01010101
+	
+DisolveBlocksANDLUT
+		.byte 255,255,255,255,255,255,255,255
+		.byte %00110011
+		.byte %11001100
+		.byte %00000000
+		.byte %00000000
+		.byte %00000000
+		.byte %00000000
+		.byte 0,0,0,0,0,0,0
+
+		
+DisolveSourceCharOffsetLUT	.byte 02*8,03*8,08*8,09*8,10*8,12*8, 00*8,01*8,14*8,15*8,16*8,17*8,18*8,19*8,20*8,21*8
+DisolveDestCharOffsetLUT	.byte 08*8,09*8,10*8,11*8,12*8,13*8, 14*8,15*8,16*8,17*8,18*8,19*8,20*8,21*8,22*8,23*8
+DisolveANDORROffsetLUT		.byte 3   ,3   ,5   ,5   ,7   ,8   , 0   ,0   ,0   ,0   ,2   ,2   ,4   ,4   ,6   ,6
 EntitySpriteColours		.byte 4,15,10,14,15,5,3,14
 EntitySpriteStartFrame	.byte kSprBase+32,kSprBase+40,kSprBase+48,kSprBase+56,kSprBase+64,kSprBase+72,kSprBase+80,kSprBase+88
+
+SpriteUnpackTBL
+.byte 1,1
+.byte 1,1
+.byte 1,0
+.byte 2,1
+.byte 1,1
+.byte 2,2
+.byte 1,1
+.byte 1,1
+.byte 1,1
+.byte 1,1
+.byte 1,1
+.byte 1,1
+.byte 0,0
+.byte 0,0
+.byte 0,0
+;.byte 0,0,0,1
 
 IndexToORLUT	.byte 1,2,4,8,16,32,64,128
 IndexToANDLUT	.byte 254,253,251,247,239,223,191,127
@@ -3746,14 +4399,15 @@ BaseAnimeFrameForDir
 .byte kSprBase+80,kSprBase+80,kSprBase+84,kSprBase+84 ; fish 
 .byte kSprBase+92,kSprBase+92,kSprBase+88,kSprBase+88 ; flying thing 
 FrameCountForEnt
-.byte 008,008,004,004,004,002,004,004
+.byte 008,004,004,004,004,002,004,004
 CollFrameForEnt
 .byte 000,000,000,001,000,000,000,000
 CollisionResultEORForEnt
 .byte 000,000,000,001,000,000,000,000
 AnimFrameTimerForEnt
-.byte 008,008,008,008,008,008,001,002
-
+.byte 008,002,008,008,008,008,001,002
+SpringDirectionToDeltaLUT
+.char -2,-1,-1,-1,01,01,01,02 
 SinJumpTable
 .char -8, -6, -5, -4, -5, -3
 .char -4, -3, -2, -3, -1, -2, -1, 0, -1, -1, 0 
@@ -3761,6 +4415,12 @@ kSinJumpFall = * - SinJumpTable
 .char  1,  2,  1,  3,  2,  3,  4  
 .char  3,  5,  4,  5,  6,  5, 6,  6,  7, 8, 8 
 kSinJumpMax = * - SinJumpTable - 1
+SpringFrameFrameTable
+.byte kSprites.springCompress,kSprites.springCompress,kSprites.springCompress
+.byte kSprites.springNormal,kSprites.springNormal,kSprites.springNormal
+.byte kSprites.springExpand,kSprites.springExpand,kSprites.springExpand
+.byte kSprites.springFull,kSprites.springFull,kSprites.springFull
+.byte kSprites.springFull,kSprites.springExpand,kSprites.springExpand,kSprites.springNormal,kSprites.springNormal
 
 CircleJumpTableStart 
 .char  5, 5, 5, 5, 4, 4, 4, 3, 2, 2, 1, 1, 0,-1,-1,-2,-2,-3,-4,-4,-4,-5,-5,-5,-5
@@ -3803,20 +4463,49 @@ screenRowLUTHi
 .byte >ue
 .next
 
-*= $4000
-fileScreen ;
-*= $4400
+BackChars1 .binary "back_chars_1.raw"
+BackChars2 .binary "back_chars_1.raw"
+BackChars3 .binary "back_chars_1.raw"
+BackChars4 .binary "back_chars_1.raw"
+BlockChars1 .binary "wall1_chars.raw"
+BlockChars2 .binary "wall2_chars.raw"
+BlockChars3 .binary "wall3_chars.raw"
+BlockChars4 .binary "wall4_chars.raw"
+AppleChars .binary "apple_chars.raw"
+ExclimationsChars .binary "excelmation_chars.raw"
+CherryChars .binary "cherry_chars.raw"
+SphereChars .binary "sphere_chars.raw"
+LowerFixedChars .binary "fixed_section_chars.raw"
+UpperFixedChars .binary "top_fixed_chars.raw"
+EmptyDisolveChars .binary "empty_disolve_chars.raw"
+
+PackedSprites .binary "sprites_small.bin"
+
 fileCharCols ;		
 .binary "testattribs.raw"	
-*= $4500
 fileTiles ;		
-.binary "tiledefs.raw"	; needs to be 80 bytes
+.binary "tiledefs.raw",0,32*4
+* = fileTiles + (33*4)
+.byte 06,05,10,03
+
+
+*= $4000
+fileScreen ;
+;*= $4400
+;fileCharCols ;		
+;.binary "testattribs.raw"	
+;*= $4500
+;fileTiles ;		
+;.binary "tiledefs.raw",32*4	; needs to be 80 bytes
+;* = $4500 + (33*4)
+;.byte 06,05,10,03
 *= $4800
 fileChars ;
-.binary "testchars.raw"
+;.fill 88+(24*8)
+;.binary "testchars.raw",88+(24*8)
 *= $5000
 fileSprites ;
-.binary "sprites.bin"		
+;.binary "sprites.bin"		
 * = $7000		
 fileTileMap; 
 .binary "testmap.raw"

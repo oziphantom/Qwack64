@@ -1,0 +1,10 @@
+!sal
+*=$400
+start
+  sta $500
+  stx $501
+  sty $502
+  php
+  pla
+  sta $503
+  rts
