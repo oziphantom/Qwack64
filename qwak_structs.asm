@@ -42,6 +42,7 @@ currAnim .byte ?
 .ends
 
 sEntityData .struct
+number		.byte ?
 type		.fill 31 ; .byte ?,?,?,?,?,?,?
 direction	.fill 31 ;.byte ?,?,?,?,?,?,?
 active		.fill 31 ;.byte ?,?,?,?,?,?,?
@@ -51,6 +52,10 @@ animBase 	.fill 31
 animFrame	.fill 31
 originalY	.fill 31 ;.byte ?,?,?,?,?,?,?
 entState	.fill 31 ;.byte ?,?,?,?,?,?,?
+collisionX1 .fill 31
+collisionX2 .fill 31
+collisionY1 .fill 31
+collisionY2 .fill 31
 .ends
 
 sCSTCCParams .struct	
