@@ -316,11 +316,13 @@ RESET
 		sta GameData.lives
 		jsr pltLives
 		; main loop
+MAINLOOP
 -		lda mplexZP.lsbtod	
 		beq -	
 		dec mplexZP.lsbtod	
 ;	inc $d020
 ;	inc $d020
+		jsr BuildEntCollisionTable
 		;jsr buildSpriteCollisionTable
 		;jsr DidIHitSomething
 		jsr collidePlayerAgainstRest
@@ -1421,7 +1423,7 @@ _found
 	
 TileFuncLookup .byte kTiles.fruit,kTiles.flower,kTiles.key1,kTiles.key2,kTiles.key3,kTiles.key4,kTiles.spike,kTiles.spring,kTiles.potion,kTiles.shield,kTiles.exit	
 TileFuncLUTLo .byte <fruitFunc-1 ,<flowerFunc-1,<keyFunc-1 ,<keyFunc-1 ,<keyFunc-1 ,<keyFunc-1 ,<spikeFunc-1,<springFunc-1,<potionFunc-1,<shildFunction-1,<exitFunc-1
-TileFuncLUTHi .byte >fruitFunc   ,>flowerFunc  ,>keyFunc   ,>keyFunc   ,>keyFunc   ,>keyFunc   ,>spikeFunc  ,>springFunc  ,>potionFunc  ,>shildFunction  ,>exitFunc
+TileFuncLUTHi .byte >fruitFunc-1 ,>flowerFunc-1,>keyFunc-1 ,>keyFunc-1 ,>keyFunc-1 ,>keyFunc-1 ,>spikeFunc-1,>springFunc-1,>potionFunc-1,>shildFunction-1,>exitFunc-1
 
 fruitFunc
 	jsr clearTileNew
@@ -1600,6 +1602,7 @@ removeAllTilesOf
 	sta ZPTemp5
 	ldx #0
 	stx ActiveTileIndex
+	stx TestingSprX1
 _loop
 	lda tileMapTemp,x
 	cmp ZPTemp5
@@ -1629,8 +1632,9 @@ _restoreACI
 	lda Pointer4
 	sta ActiveTileIndex
 _next	
-	inc ActiveTileIndex
-	ldx ActiveTileIndex
+	inc TestingSprX1
+	ldx TestingSprX1
+	stx ActiveTileIndex
 	cpx # kLevelSizeMax
 	bne _loop
 	rts	
@@ -1952,6 +1956,19 @@ _active
 	jsr SetEntSpriteForDirection
 	jmp _c
 	
+
+; build hte collision data for each ent first
+BuildEntCollisionTable
+	ldx # kEntity.maxEntities-1
+innerEntitiesLoopColl
+	lda EntityData.active,x
+	beq updateEntitiesLoopColl
+	jsr MakeMinMaxXYForX	
+updateEntitiesLoopColl
+	dex
+	bpl innerEntitiesLoopColl
+	rts
+	
 updateEntities
 	ldx # kEntity.maxEntities-1
 innerEntitiesLoop
@@ -1998,7 +2015,7 @@ EntitiesActive
 		
 ;right, up, left ,down			
 ENTDirectionCheckFuncLUTLo .byte <entRight-1,<entUp-1,<entLeft-1,<entDown-1	
-ENTDirectionCheckFuncLUTHi .byte >entRight  ,>entUp  ,>entLeft  ,>entDown	
+ENTDirectionCheckFuncLUTHi .byte >entRight-1,>entUp-1,>entLeft-1,>entDown-1	
 	
 entRight	
 	lda #1	
@@ -2160,7 +2177,7 @@ entSpiderFunc
 	rts
 	
 SpiderEntFuncLUTLo .byte <spiderLookPlayer-1,<spiderFall-1,<spiderRise-1	
-SpiderEntFuncLUTHi .byte >spiderLookPlayer  ,>spiderFall  ,>spiderRise	
+SpiderEntFuncLUTHi .byte >spiderLookPlayer-1,>spiderFall-1,>spiderRise-1	
 	
 spiderLookPlayer
 	ldx #0
@@ -2330,6 +2347,8 @@ _falling
 springEntYCollideEnd
 	lda CollisionResult
 	bne _hit
+	jsr collideEntAgainstRest
+	bcs _hit
 	; didn't hit so carry on
 	ldx CurrentEntity
 	lda mplexBuffer.ypos+1,x
@@ -2341,14 +2360,34 @@ springEntYCollideEnd
 	adc #1
 	cmp #kSinJumpMax
 	bcc _store
-	lda #0
+	lda #kSinJumpMax-1
 _store
 	sta EntityData.entState,x
 	jmp springEntHandleX
 _hit
-	lda ZPTemp2
 	ldx CurrentEntity
+	lda ZPTemp2
 	sta EntityData.entState,x
+;	beq _clipToBelow
+	; clip to above
+;;	lda mplexBuffer.ypos+1,x
+;;	sec
+;;	sbc #kBounds.screenMinY-8
+;;	and #$F0 ; make multiple of 16
+;;	clc
+;;	adc #kBounds.screenMinY
+;;	sta mplexBuffer.ypos+1,x
+;	jmp springEntHandleX
+;_clipToBelow	
+;	lda mplexBuffer.ypos+1,x
+;	sec
+;	sbc #kBounds.screenMinY-1
+;	clc
+;	adc checkSpriteToCharData.yDeltaCheck
+;	and #$F0 ; make multiple of 16
+;	clc
+;	adc #kBounds.screenMinY
+;	sta mplexBuffer.ypos+1,x
 springEntHandleX
 	lda #0
 	sta checkSpriteToCharData.yDeltaCheck
@@ -2374,41 +2413,57 @@ springEntXCollideEnd
 	bmi springEntXLeft
 	lda CollisionResult		
 	beq _noCollideRight		
+_hit	
 	lda #256-1		
+	ldx CurrentEntity	
 	sta EntityData.direction,x 		 
-	jmp nextEnt
+	jmp springEndAnimate
 _noCollideRight
-	lda mplexBuffer.xpos+1,x
-	clc
-	adc checkSpriteToCharData.xDeltaCheck
-	sta mplexBuffer.xpos+1,x
+	jsr collideEntAgainstRest
+	bcs _hit
+	ldx CurrentEntity
+	inx
+	jsr addXWithMSBAndClip
+	dex
+	lda DidClipX
+	beq _noclip
+	lda #256-1
+	bmi _store
+_noclip
 	lda EntityData.direction,x 	
 	clc
 	adc #1
-	cmp #4
-	bne _noClip
-	lda #3
-_noClip	
-	sta EntityData.direction,x
-	jmp nextEnt		
+	and #3
+_store
+	sta EntityData.direction,x	
+	jmp springEndAnimate		
 springEntXLeft	
 	lda CollisionResult		
 	beq _noCollideLeft		
-	lda #0		
+_hit		
+	lda #1		
+	ldx CurrentEntity
 	sta EntityData.direction,x 		 
 	jmp springEndAnimate
 _noCollideLeft
-	lda mplexBuffer.xpos+1,x
-	clc
-	adc checkSpriteToCharData.xDeltaCheck
-	sta mplexBuffer.xpos+1,x
+	jsr collideEntAgainstRest
+	bcs _hit
+	ldx CurrentEntity
+	inx
+	jsr addXWithMSBAndClip
+	dex
+	lda DidClipX
+	beq _noclip
+	lda #1
+	bpl _store
+_noClip	
 	lda EntityData.direction,x 	
 	sec
 	sbc #1
 	cmp #256-5
-	bne _noClip
-	lda #256-4
-_noClip	
+	bne _store
+	lda #256-4	
+_store	
 	sta EntityData.direction,x
 springEndAnimate
 	ldx CurrentEntity
@@ -2618,8 +2673,23 @@ _did
 ;}}}	
 	
 collidePlayerAgainstRest
-	jsr makeMinMaxYForPlayer
-	jsr makeMinMaxXForPlayer
+;;	jsr makeMinMaxYForPlayer
+	lda mplexBuffer.ypos
+	clc
+	adc CollisionBoxesY
+	sta Pointer3
+	sta TestingSprY1
+	clc
+	adc CollisionBoxesH
+	sta Pointer3+1
+	sta TestingSprY2
+;;	jsr makeMinMaxXForPlayer
+	ldx #0
+	jsr convertXSingleByteEntX
+	sta TestingSprX1
+	clc
+	adc CollisionBoxesW
+	sta TestingSprX2
 	lda #$FF
 	sta CurrentEntity ; so we don't skip any
 	jmp collideAgainstEntPlayerEntry
@@ -2630,36 +2700,40 @@ collideEntAgainstRest
 	; a hit is if my x1 <= y2 && y1 <= x2
 	; where x1 = my Ent Y, x2 = my Ent Y+Height 
 	; y1 = Other Ent Y, y2 = other Ent Y+Height
+	dec $d020
 	ldx CurrentEntity
 	ldy #0
-	jsr makeMinMaxXForEntXIntoY
-	lda Pointer3
+	lda EntityData.collisionX1,x
 	clc
 	adc checkSpriteToCharData.xDeltaCheck
 	sta TestingSprX1 ; cache X
-	lda Pointer3+1
+	lda EntityData.collisionX2,x
 	clc
 	adc checkSpriteToCharData.xDeltaCheck
 	sta TestingSprX2
-	
-	jsr makeMinMaxYForEntXIntoY
-	lda Pointer3
+	lda EntityData.collisionY1,x
 	clc
 	adc checkSpriteToCharData.yDeltaCheck
 	sta TestingSprY1
-	sta Pointer3 ; cache Y
-	lda Pointer3+1
+	lda EntityData.collisionY2,x
 	clc
 	adc checkSpriteToCharData.yDeltaCheck
 	sta TestingSprY2
-	sta Pointer3+1
+	inc $d020
 collideAgainstEntPlayerEntry
+	dec $d020
 	ldy #2 ; other slot
 	ldx #0
 -	cpx CurrentEntity
 	beq Ent_Ent_Coll_skipSelf
-	jsr makeMinMaxYForEntXIntoY	
-	jsr checkMinMaxForHit	
+	lda #0	
+	sta ZPTemp	
+	lda TestingSprY1
+	cmp EntityData.collisionY2,x
+	jsr doMinMaxBitTest
+	lda EntityData.collisionY1,x
+	cmp TestingSprY2
+	jsr doMinMaxBitTest
 	lda ZPTemp	
 	and #3	
 	beq hitY	
@@ -2667,109 +2741,60 @@ Ent_Ent_Coll_skipSelf
 	inx	
 	cpx EntityData.number	
 	bne -
+	inc $d020
 	clc
 	rts
 	
 hitY ; now we need to do the same thing but for the X	
+	lda #0	
+	sta ZPTemp	
 	lda TestingSprX1
-	sta Pointer3
-	lda TestingSprX2
-	sta Pointer3+1
-	jsr makeMinMaxXForEntXIntoY
-	jsr checkMinMaxForHit
+	cmp EntityData.collisionX2,x
+	jsr doMinMaxBitTest
+	lda EntityData.collisionX1,x
+	cmp TestingSprX2
+	jsr doMinMaxBitTest
 	lda ZPTemp
 	and #3
 	beq hitX
-	lda TestingSprY1
-	sta Pointer3
-	lda TestingSprY2
-	sta Pointer3+1 ; put the Y back
 	jmp Ent_Ent_Coll_skipSelf
 hitX
+	inc $d020
 	sec
 	rts
-	
-makeMinMaxYForEntXIntoY
-	stx ZPTemp5
-	lda mplexBuffer.ypos+1,x
-	sta Pointer3,y
-	lda EntityData.type,x
-	tax
-	lda CollFrameForEnt,x
-	tax
-	lda Pointer3,y
-	clc
-	adc CollisionBoxesY,x
-	sta Pointer3,y
-	clc
-	adc CollisionBoxesH,x
-	sta Pointer3+1,y
-	ldx ZPTemp5
-	rts
 
-makeMinMaxXForEntXIntoY
-	stx ZPTemp5
+MakeMinMaxXYForX
+	lda EntityData.type,x
+	tay
+	lda CollFrameForEnt,y
+	tay
 	inx ; convert to all sprites not just ents
 	jsr convertXSingleByteEntX
 	dex ; convert back
-	sta Pointer3,y
-	lda EntityData.type,x
-	tax
-	lda CollFrameForEnt,x
-	tax
-	lda Pointer3,y
 	clc
-	adc CollisionBoxesX,x
-	sta Pointer3,y
+	adc CollisionBoxesX,y
+	sta EntityData.collisionX1,x
 	clc
-	adc CollisionBoxesW,x
-	sta Pointer3+1,y
-	ldx ZPTemp5
-	rts
-	
-makeMinMaxYForPlayer
-	lda mplexBuffer.ypos
+	adc CollisionBoxesW,y
+	sta EntityData.collisionX2,x
+	lda mplexBuffer.ypos+1,x
 	clc
-	adc CollisionBoxesY
-	sta Pointer3
-	sta TestingSprY1
+	adc CollisionBoxesY,y
+	sta EntityData.collisionY1,x
 	clc
-	adc CollisionBoxesH
-	sta Pointer3+1
-	sta TestingSprY2
+	adc CollisionBoxesH,y
+	sta EntityData.collisionY2,x
 	rts
 
-makeMinMaxXForPlayer
-	ldx #0
-	jsr convertXSingleByteEntX
-	sta TestingSprX1
-	clc
-	adc CollisionBoxesW
-	sta TestingSprX2
-	rts	
-		
-checkMinMaxForHit
-	lda #0
-	sta ZPTemp
-	lda Pointer3
-	cmp Pointer4+1
-	beq _firstPass
-	bcc _firstPass
-	bcs _firstFail
-_firstPass
-	clc
-_firstFail
-	rol ZPTemp
-	lda Pointer4
-	cmp Pointer3+1
-	beq _secPass
-	bcc _secPass
-	bcs _secFail
+doMinMaxBitTest
+	beq _secPass		
+	bcc _secPass		
+	bcs _secFail		
 _secPass
-	clc
+	clc					
 _secFail
-	rol ZPTemp
-	rts
+	rol ZPTemp			
+	rts					
 	
 ; multiplexor
 setirq
