@@ -172,6 +172,14 @@ joyRight .byte ?
 joyUp	 .byte ?
 joyDown	 .byte ?
 joyFire	 .byte ?
+oldJoyLeft	.byte ?
+oldJoyRight .byte ?
+oldJoyUp	.byte ?
+oldJoyDown	.byte ?
+oldJoyFire	.byte ?
+joyUpStart  .byte ?
+joyUpStop	.byte ?
+joyFireEvent .byte ?
 GameData .dstruct sGameData
 LevelData .dstruct sLevelData
 PlayerData .dstruct sPlayerData
@@ -323,13 +331,10 @@ MAINLOOP
 ;	inc $d020
 ;	inc $d020
 		jsr BuildEntCollisionTable
-		;jsr buildSpriteCollisionTable
-		;jsr DidIHitSomething
 		jsr collidePlayerAgainstRest
 		lda #0
 		rol a ; pull is carry set
 		ora PlayerData.dead
-		;lda PlayerData.dead
 		beq +
 		lda PlayerData.hasShield
 		bne +
@@ -342,20 +347,12 @@ MAINLOOP
 +		jsr updateTickdowns
 		jsr joyToPlayerDelta
 		jsr checkSpriteToCharCollision
-;		jsr checkQwakOnDoor
-;		jsr checkOnDissTile
 		lda checkSpriteToCharData.xDeltaCheck
 		beq _addY
 		;make sure x reg is 0, and call addXWithMSBAndClip
 		ldx #0
 		jsr addXWithMSBAndClip
 _addY		
-;		lda checkSpriteToCharData.yDeltaCheck
-;		bmi +
-;		cmp #$8
-;		bcc +
-;		lda #$8
-;		sta checkSpriteToCharData.yDeltaCheck
 +		lda mplexBuffer.ypos
 		clc
 		adc checkSpriteToCharData.yDeltaCheck
@@ -1049,12 +1046,13 @@ renderTile
 		rts
 		
 scanJoystick
+		ldx #4
+-		lda joyLeft,x
+		sta oldJoyLeft,x
 		lda #0
-		sta joyDown
-		sta joyLeft
-		sta joyRight
-		sta joyUp
-		sta joyFire
+		sta joyLeft,x
+		dex
+		bpl -
 		ldx #1
 		lda $DC00
 		lsr 
@@ -1070,7 +1068,19 @@ _checkFire
 		lsr 
 		bcs _joyEnd
 		stx joyFire
-_joyEnd rts
+_joyEnd lda oldJoyUp
+		eor joyUp
+		and joyUp
+		sta joyUpStart
+		lda joyUp
+		eor OldJoyUp
+		and OldJoyUp
+		sta joyUpStop
+		lda oldJoyFire
+		eor joyFire
+		and joyFire
+		sta joyFireEvent
+		rts
 		
 _joyUp	
 		lsr ; skip down bit
@@ -2368,26 +2378,6 @@ _hit
 	ldx CurrentEntity
 	lda ZPTemp2
 	sta EntityData.entState,x
-;	beq _clipToBelow
-	; clip to above
-;;	lda mplexBuffer.ypos+1,x
-;;	sec
-;;	sbc #kBounds.screenMinY-8
-;;	and #$F0 ; make multiple of 16
-;;	clc
-;;	adc #kBounds.screenMinY
-;;	sta mplexBuffer.ypos+1,x
-;	jmp springEntHandleX
-;_clipToBelow	
-;	lda mplexBuffer.ypos+1,x
-;	sec
-;	sbc #kBounds.screenMinY-1
-;	clc
-;	adc checkSpriteToCharData.yDeltaCheck
-;	and #$F0 ; make multiple of 16
-;	clc
-;	adc #kBounds.screenMinY
-;	sta mplexBuffer.ypos+1,x
 springEntHandleX
 	lda #0
 	sta checkSpriteToCharData.yDeltaCheck
