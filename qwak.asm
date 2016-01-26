@@ -73,18 +73,24 @@ kDirections .block
 kPlayerParams .block
 	jumpStartDelta = 255-1
 	jumpDeltaAccum = 19
-	jumpDeltaAccumFloat = 2
-	maxFallSpeed = 8
+	jumpDeltaAccumFloat = 4
+	maxFallSpeed = 4
 .bend
 kJumpIndexs .block
 	normal = 0
 	floaty = 1
 .bend
 kPlayerAnimsIndex .block
-	standLeft = 0
-	standRight = 1
-	standWalkLeft = 2
-	standWalkRight = 3
+	standRight = 0
+	standLeft = 1
+	standWalkRight = 2
+	standWalkLeft = 3
+	jumpRight = 4
+	jumpLeft = 5
+	flapRight = 6
+	flapLeft = 7
+	dead = 8
+	exit = 9 
 .bend		
 kSBC .block ; kStatusBorderChars
 	M	= 205
@@ -117,6 +123,22 @@ kBlocks .block
 	bottomRight = 3
 	leftShadow = 5
 	topLeftCorner = 35
+.bend
+
+kPlayerState .block
+	normal = 1
+	flap = 2
+	jump = 8
+	exit = 4
+	dead = 16
+.bend
+
+kPlayerStateExit .block
+	waitForAnimation = 0
+.bend
+
+kPlayerStateDeath .block
+	animate = 0
 .bend
 
 .include "qwak_structs.asm"
@@ -234,7 +256,7 @@ DidClipX			.byte ? ; this is if the add X with MSB function did clip the Y
 * = $0400
 tileMapTemp .fill 240
 
-.cerror * > $500, "Too many level data"
+.cerror * > $500, "Too much level data"
 
 ;----------------------------
 ; Unpacked Code section
@@ -251,6 +273,23 @@ irqBuffers .fill irqLength * 8
 	.null $9e, ^start;will be sys 4096
 +	.word 0	 ;basic line end
 	
+	
+;---------------------------
+; MACROS
+;---------------------------
+mCallFunctioTable .macro
+	lda \1.hi,\2
+	pha
+	lda \1.lo,\2
+	pha
+	rts
+.endm
+
+mMakeFunctionTable .macro	
+lo .byte <(\@)-1	
+hi .byte >(\@)-1	
+.endm	
+
 *= $0810
 start
 		jsr setirq ; clear all interupts and put out own in
@@ -299,6 +338,7 @@ RESET
 		ldx #0
 		lda #0
 -		sta variables,x		; clear all the variables
+		sta variables+$100,x
 		sta tileMapTemp,x	; clear the tile map and after it so collisions is 00
 		inx
 		bne -
@@ -330,6 +370,18 @@ MAINLOOP
 		dec mplexZP.lsbtod	
 ;	inc $d020
 ;	inc $d020
+		jsr updateTickdowns
+		ldx #0
+		lda PlayerData.state
+		cmp #kPlayerState.exit
+		bne +
+		ldx #1
++		cmp #kPlayerState.dead
+		bne +
+		ldx #2
++		.mCallFunctioTable PlayerCodeLUT,x
+PlayerCodeLUT .mMakeFunctionTable PlayerNormal,PlayerExit,PlayerDead
+PlayerNormal
 		jsr BuildEntCollisionTable
 		jsr collidePlayerAgainstRest
 		lda #0
@@ -338,13 +390,14 @@ MAINLOOP
 		beq +
 		lda PlayerData.hasShield
 		bne +
-		dec GameData.lives
-		lda #0
-		sta PlayerData.dead
+		dec GameData.lives		
 		jsr pltLives		
-		jsr setPlayerToSpawnPoint		
+		lda #kPlayerState.dead		
+		sta PlayerData.state		
+		sta PlayerData.minorState	
 		jmp -		
-+		jsr updateTickdowns
++		lda #0
+		sta PlayerData.dead
 		jsr joyToPlayerDelta
 		jsr checkSpriteToCharCollision
 		lda checkSpriteToCharData.xDeltaCheck
@@ -358,6 +411,48 @@ _addY
 		adc checkSpriteToCharData.yDeltaCheck
 		sta mplexBuffer.ypos
 		jsr updatePlayerAnim
+		jmp EndOfMainLoop
+
+PlayerExit		
+		lda PlayerData.minorState
+		cmp #kPlayerState.exit
+		bne _waitForAnimation
+		; we have to set up the exit animation
+		lda #kPlayerAnimsIndex.exit
+		jsr setPlayerAnimeTo
+		lda #kPlayerStateExit.waitForAnimation
+		sta PlayerData.minorState
+		lda LevelData.exitIndex
+		jsr setPlayerToIndexA
+_exit	jmp EndOfMainLoop		
+_waitForAnimation			
+		jsr updatePlayerAnim			
+		bcc _exit
+		jmp RESET
+		
+PlayerDead
+		lda PlayerData.minorState
+		cmp #kPlayerState.dead
+		bne _waitForAnimation
+		; we have to set up the exit animation
+		lda #kPlayerAnimsIndex.dead
+		jsr setPlayerAnimeTo
+		lda #kPlayerStateDeath.animate
+		sta PlayerData.minorState
+_exit	jmp EndOfMainLoop		
+_waitForAnimation			
+		dec mplexBuffer.ypos
+		jsr updatePlayerAnim			
+		bcc _exit
+		jsr setPlayerToSpawnPoint
+		jsr enterOnGround
+		lda #kPlayerState.normal
+		sta PlayerData.state
+		lda #0
+		sta PlayerData.dead
+		jmp EndOfMainLoop
+		
+EndOfMainLoop
 		jsr updateEntities
 		jsr animateDoor
 ;	dec $d020
@@ -421,11 +516,149 @@ _storeX2
 	rts		
 			
 		
-joyToPlayerDelta
+joyToPlayerDelta 
 		jsr scanJoystick
 		lda #0
 		sta checkSpriteToCharData.xDeltaCheck
 		sta checkSpriteToCharData.yDeltaCheck
+		sta PlayerData.movingLR
+		lda joyLeft
+		ora joyRight
+		beq _noLR
+		lda joyLeft
+		bne _right
+		lda #1
+		sta checkSpriteToCharData.xDeltaCheck
+		lda joyLeft
+		and oldJoyLeft
+		bne _noLR ; we were already going left
+		lda #1
+		sta PlayerData.movingLR
+		lda #0
+		jsr changePlayerDir
+		jmp _noLR
+_right
+		lda #255
+		sta checkSpriteToCharData.xDeltaCheck
+		lda joyRight
+		and oldJoyRight
+		bne _noLR ; we were already going right
+		lda #1
+		sta PlayerData.movingLR
+		lda #1
+		jsr changePlayerDir
+		jmp _noLR
+_noLR		
+		lda PlayerData.movingLR
+		bne +
+		lda PlayerData.facingRight
+		jsr changePlayerDir
++		lda PlayerData.onGround
+		and joyUpStart
+		bne StartJump
+		lda PlayerData.onGround
+		bne OnGround
+		lda PlayerData.yDeltaAccum + 1
+		bpl falling
+		lda #0
+		sta PlayerData.isFalling
+		lda PlayerData.hasJumped ; if this is 1
+		eor PlayerData.isFalling   ; and so is this, it will make it 0, other wise still 1
+		and joyUpStop 			 ; and the player has let go
+		bne AbortJump
+;		lda PlayerData.onGround
+;		bne OnGround
+		; we are in air then
+normalJumpUpdate
+		ldx # kJumpIndexs.normal
+customJumpUpdate
+		jsr incPlayerYDeltaAndReturn
+		lda PlayerData.yDeltaAccum + 1
+		sta checkSpriteToCharData.yDeltaCheck
+		rts
+falling
+		lda PlayerData.canFloat
+		beq normalJumpUpdate
+		jmp handleFall
+OnGround
+		lda #kPlayerState.normal
+		sta PlayerData.state
+		lda #1
+		sta checkSpriteToCharData.yDeltaCheck
+		jsr changePlayerAnimForCurrentDir
+		rts
+AbortJump		
+		lda #$80	
+		sta PlayerData.yDeltaAccum	
+		lda #$FF
+		sta PlayerData.yDeltaAccum+1		
+		rts		
+StartJump
+		lda #1
+		sta PlayerData.hasJumped	; we are jumping
+		lda #kPlayerState.jump
+		sta PlayerData.state
+		lda #0
+		sta PlayerData.isFalling	; not falling
+		sta PlayerData.onGround		; not on the ground
+		sta PlayerData.yDeltaAccum	; set the Y jump accleration
+		lda # kTimers.floatTimer	; reset the float timer
+		sta PlayerData.floatTimer
+		lda # kPlayerParams.jumpStartDelta	; set the other half of jump accleration
+		sta PlayerData.yDeltaAccum + 1
+		sta checkSpriteToCharData.yDeltaCheck
+		jsr changePlayerAnimForCurrentDir
+		rts	
+handleFall
+		lda PlayerData.state
+		cmp #kPlayerState.jump
+		bne _didntJustStartFalling
+		lda joyUp ; if we just start falling, and joy is up and we have spring float
+		beq _didntJustStartFalling
+		lda #kPlayerState.flap
+		sta PlayerData.state
+		jmp _dontStopFloat
+_didntJustStartFalling
+		lda PlayerData.state
+		cmp #kPlayerState.flap
+		bne _checkUpStart
+		lda joyUpStop
+		beq _dontStopFloat
+		lda #kPlayerState.jump
+		sta PlayerData.state
+		jmp normalJumpUpdate
+_dontStopFloat
+		lda PlayerData.floatTimer
+		bmi normalJumpUpdate
+		dec PlayerData.floatTimer
+		ldx #kJumpIndexs.floaty
+		jmp customJumpUpdate
+_checkUpStart		
+		lda joyUpStart		
+		bne +
+		jmp normalJumpUpdate		
++		lda #kPlayerState.flap		
+		sta PlayerData.state		
+		ldx #kJumpIndexs.floaty
+		jmp customJumpUpdate			
+				
+enterOnGround
+		lda #kPlayerState.normal
+		sta PlayerData.state
+		lda #1
+		sta PlayerData.onGround
+		sta PlayerData.yDeltaAccum
+		lda #0
+		sta PlayerData.hasJumped
+		sta PlayerData.isFalling		
+		sta PlayerData.yDeltaAccum + 1
+		
+		lda PlayerData.facingRight		
+		jsr changePlayerDir
+		rts
+
+;{{{
+.comment		
 ; Check Left and Right
 		lda joyLeft
 		beq _cr
@@ -524,15 +757,31 @@ _downOne
 		lda #1
 		sta checkSpriteToCharData.yDeltaCheck
 		rts
+.endc ;}}}
 
 changePlayerDir
 		sta PlayerData.facingRight
-		tax
+changePlayerAnimForCurrentDir
+		lda PlayerData.state
+		cmp #kPlayerState.flap
+		bne _notFlap
+		lda #kPlayerAnimsIndex.flapRight
+		bne _still
+_notFlap
+		lda PlayerData.onGround
+		bne _onGround
+		lda #kPlayerAnimsIndex.jumpRight
+		bne _still
+_onGround
 		lda PlayerData.movingLR
-		beq _still
-		inx	 ; THIS IS BAD AND A HACK
-		inx
-_still	jsr setPlayerAnimeTo
+		beq _notMoving
+		lda #kPlayerAnimsIndex.standWalkRight
+		bne _still
+_notMoving
+		lda #kPlayerAnimsIndex.standRight		
+_still	clc
+		adc PlayerData.facingRight
+		jsr setPlayerAnimeTo
 		rts
 	
 incPlayerYDeltaAndReturn
@@ -550,9 +799,10 @@ incPlayerYDeltaAndReturn
 		rts
 
 setPlayerAnimeTo
-		cpx PlayerData.currAnim
+		cmp PlayerData.currAnim
 		beq _dontchange
-		stx PlayerData.currAnim
+		sta PlayerData.currAnim
+		tax
 		lda PlayerSprLUT,x
 		sta PlayerData.baseSprite
 		sta mplexBuffer.sprp
@@ -566,12 +816,15 @@ setPlayerAnimeTo
 _dontchange		
 		rts
 		
+; returns carry clear if anim did not loop		
+; carry is set if it did		
 updatePlayerAnim
 		lda PlayerData.frameCount
 		cmp #2
 		bcc _skip
 		lda TickDowns.playerAnim
 		beq _itTime
+		clc
 _skip	rts
 _itTime
 		lda PlayerData.frameOffset
@@ -581,18 +834,20 @@ _itTime
 		bcc _store
 		lda #0
 _store	sta PlayerData.frameOffset
+		php ; if we overflowed c will be set, else clear
 		clc
 		adc PlayerData.baseSprite
 		sta mplexBuffer.sprp
 		lda PlayerData.frameTimer
 		sta TickDowns.playerAnim
+		plp ; restore carry state
 		rts 
 
 PlayerJumpLUT .byte kPlayerParams.jumpDeltaAccum, kPlayerParams.jumpDeltaAccumFloat
 						; Left	Right  Walk L	Walk R
-PlayerSprLUT		.byte $44  ,$40		,$4C	,$48
-PlayerFrameCountLUT .byte 1	   ,1		,4		,4
-PlayerAnimTimer		.byte 255  ,255		,8		,8
+PlayerSprLUT		.byte kSprBase,kSprBase+04,kSprBase+08,kSprBase+12,kSprBase+16,kSprBase+18,kSprBase+20,kSprBase+22,kSprBase+24,kSprBase+28
+PlayerFrameCountLUT .byte 1	   	  ,1		  ,4		  ,4		  ,2		  ,2		  ,2		  ,2		  ,4		  ,4
+PlayerAnimTimer		.byte 255     ,255		  ,8		  ,8		  ,8		  ,8		  ,8		  ,8		  ,8		  ,8
 
 emptyCRAM
 		ldx #00
@@ -698,14 +953,8 @@ _cont	;tax
 		pla 
 		rts 
 _playerPos
-		sty LevelData.playerX
-		pla
-		sta ZPTemp
-		pha
-		lda #12
-		sec
-		sbc ZPTemp
-		sta LevelData.playerY
+		lda ActiveTileIndex
+		sta LevelData.playerIndex
 		lda # kTiles.back
 		jmp _cont
 _key	inc LevelData.numKeys
@@ -1310,6 +1559,8 @@ CSTCCY
 	lda ZPTemp
 	ora ZPTemp2
 	beq _exit	
+	; abort jump
+_startFall
 	lda #1	
 	sta PlayerData.isFalling	
 	lda #0
@@ -1317,13 +1568,9 @@ CSTCCY
 	sta PlayerData.yDeltaAccum+1
 	rts	
 _onGround
-	lda #1
-	sta PlayerData.onGround
-	sta PlayerData.yDeltaAccum
 	lda #0
-	sta PlayerData.isFalling
-	sta PlayerData.yDeltaAccum + 1
 	sta checkSpriteToCharData.yDeltaBackup
+	jsr enterOnGround
 _noOnGround
 	lda #$0
 	sta checkSpriteToCharData.yDeltaCheck
@@ -1332,6 +1579,9 @@ _checkDown
 	lda ZPTemp3
 	ora ZPTemp4
 	bne _onGround
+	lda #0
+	sta PlayerData.onGround
+;	beq _startFall
 _exit 
 	rts
 	
@@ -1497,16 +1747,20 @@ shildFunction
 	sta PlayerData.hasShield
 	rts		
 exitFunc	
-	lda GameData.currLevel
-	clc 
-	adc #1
-	and #3
-	sta GameData.currLevel
+;	lda GameData.currLevel
+;	clc 
+;	adc #1
+;	and #3
+;	sta GameData.currLevel
 	lda #0
 	sta GameData.exitOpen
-	pla
-	pla ; pull off rts addr FIX ME when you get the STATE system
-	jmp RESET			
+;	pla
+;	pla ; pull off rts addr FIX ME when you get the STATE system
+;	jmp RESET			
+	lda #kPlayerState.exit
+	sta PlayerData.state
+	sta PlayerData.minorState
+	rts
 
 awardLife
 	inc GameData.lives
@@ -1848,7 +2102,9 @@ pltFlowers
 	rts
 	
 setPlayerToSpawnPoint
-	lda LevelData.playerX
+	lda LevelData.playerIndex
+setPlayerToIndexA	
+	pha
 	asl a
 	asl a
 	asl a
@@ -1856,16 +2112,13 @@ setPlayerToSpawnPoint
 	cmp #$F0
 	beq _msbMode
 	clc
-	adc #24
+	adc #kBounds.screenMinX
 	sta mplexBuffer.xpos
 	sta mplexBuffer.xmsb
-_Y	lda LevelData.playerY
-	asl a
-	asl a
-	asl a
-	asl a
+_Y	pla
+	and #$F0
 	clc
-	adc #50
+	adc #kBounds.screenMinY
 	sta mplexBuffer.ypos
 	rts
 _msbMode
@@ -3893,7 +4146,7 @@ BlockChars4 .binary "wall4_chars.raw"
 AppleChars .binary "apple_chars.raw"
 ExclimationsChars .binary "excelmation_chars.raw"
 CherryChars .binary "cherry_chars.raw"
-SphereChars .binary "sphere_chars.raw"
+aSphereChars .binary "sphere_chars.raw"
 LowerFixedChars .binary "fixed_section_chars.raw"
 UpperFixedChars .binary "top_fixed_chars.raw"
 EmptyDisolveChars .binary "empty_disolve_chars.raw"

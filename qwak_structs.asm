@@ -12,6 +12,7 @@ numKeys .byte ?
 totalKeys .byte ?
 playerX .byte ?
 playerY .byte ?
+playerIndex .byte ?
 exitIndex .byte ?
 exitFrame .byte ?
 .ends
@@ -39,6 +40,8 @@ frameCount .byte ?
 frameTimer .byte ?
 movingLR .byte ?
 currAnim .byte ?
+state .byte ?
+minorState .byte ?
 .ends
 
 sEntityData .struct
