@@ -10,11 +10,10 @@ exitOpen .byte ?
 sLevelData .struct
 numKeys .byte ?
 totalKeys .byte ?
-playerX .byte ?
-playerY .byte ?
 playerIndex .byte ?
 exitIndex .byte ?
 exitFrame .byte ?
+levelGraphicsSet .byte ?
 .ends
 
 sTimerTickDowns .struct

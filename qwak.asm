@@ -322,10 +322,23 @@ start
 		;lda #%00010000
 		;sta $d011
 		jsr copyStuff
+		
+		ldx #0
+		lda #0
+-		sta variables,x		; clear all the variables
+		sta variables+$100,x
+		sta tileMapTemp,x	; clear the tile map and after it so collisions is 00
+		inx
+		bne -
+		
+		jsr unpackSprites
+		ldx #0
+		stx LevelData.levelGraphicsSet
+RESET		
 		jsr buildBackAndShadowChars
 		jsr BuildDisolveChars
-		jsr unpackSprites
-RESET
+		jsr copyFruitChars
+		jsr clearPlayerStuct
 		; clear Mplex 
 		ldx #$00	  ;init x with 00
 -		txa			  ;transfer x to a to create index vals
@@ -334,13 +347,6 @@ RESET
 		sta mplexBuffer.ypos,x	; disbale all sprites
 		inx			  
 		cpx # mPlex.kMaxSpr+1	 ;have we reached 32 yet?
-		bne -
-		ldx #0
-		lda #0
--		sta variables,x		; clear all the variables
-		sta variables+$100,x
-		sta tileMapTemp,x	; clear the tile map and after it so collisions is 00
-		inx
 		bne -
 		jsr emptyCRAM
 		jsr convertLevelToTileMap
@@ -428,6 +434,11 @@ _exit	jmp EndOfMainLoop
 _waitForAnimation			
 		jsr updatePlayerAnim			
 		bcc _exit
+		lda LevelData.levelGraphicsSet
+		clc
+		adc #1
+		and #3
+		sta LevelData.levelGraphicsSet
 		jmp RESET
 		
 PlayerDead
@@ -848,7 +859,14 @@ PlayerJumpLUT .byte kPlayerParams.jumpDeltaAccum, kPlayerParams.jumpDeltaAccumFl
 PlayerSprLUT		.byte kSprBase,kSprBase+04,kSprBase+08,kSprBase+12,kSprBase+16,kSprBase+18,kSprBase+20,kSprBase+22,kSprBase+24,kSprBase+28
 PlayerFrameCountLUT .byte 1	   	  ,1		  ,4		  ,4		  ,2		  ,2		  ,2		  ,2		  ,4		  ,4
 PlayerAnimTimer		.byte 255     ,255		  ,8		  ,8		  ,8		  ,8		  ,8		  ,8		  ,8		  ,8
-
+clearPlayerStuct
+	ldx #size(sPlayerData)-1
+	lda #0
+-	sta PlayerData,x
+	dex
+	bpl -
+	rts
+	
 emptyCRAM
 		ldx #00
 		lda #0
@@ -1747,16 +1765,8 @@ shildFunction
 	sta PlayerData.hasShield
 	rts		
 exitFunc	
-;	lda GameData.currLevel
-;	clc 
-;	adc #1
-;	and #3
-;	sta GameData.currLevel
 	lda #0
 	sta GameData.exitOpen
-;	pla
-;	pla ; pull off rts addr FIX ME when you get the STATE system
-;	jmp RESET			
 	lda #kPlayerState.exit
 	sta PlayerData.state
 	sta PlayerData.minorState
@@ -1935,19 +1945,7 @@ kScoreIndex .block
 FruitScore	.byte 0,0,0,1,0,0,15,15
 FlowerScore .byte 0,0,0,5,0,0,15,15
 KeyScore	.byte 0,0,0,2,5,0,15,15
-	
-.comment
-convertXYToScreen
-	stx TempX
-	lda screenRowLUTLO,y
-	clc
-	adc TempX 
-	sta $fb
-	lda screenRowLUTHi,y
-	adc #00
-	sta $fc
-	rts
-.endc	
+
 convertIndexToScreenAndCRAM
 	sta TempX
 	lsr a
@@ -3710,15 +3708,21 @@ justRTI	rti
 	
 
 buildBackAndShadowChars
+		ldx LevelData.levelGraphicsSet
+		lda BackCharsLUT,x
+		tax
+		stx ZPTemp5
 		lda #0
 		sta ZPTemp
 _loop
 		; make a clean copy
-		ldx #31
+		ldx ZPTemp5
+		ldy #31
 -		lda BackChars1,x
-		sta fileChars,x
-		sta tileMapTemp,x
+		sta fileChars,y
+		sta tileMapTemp,y
 		dex 
+		dey
 		bpl -
 		; build the char offset
 		ldx ZPTemp
@@ -3785,11 +3789,16 @@ or2Bytes2Shadow
 		rts			
 
 BuildDisolveChars
-		ldx #31
+		ldx LevelData.levelGraphicsSet
+		lda BackCharsLUT,x
+		tax
+		stx ZPTemp5
+		ldy #31
 -		lda BlockChars1,x
-		sta tileMapTemp,x
-		sta tileMapTemp+32,x
+		sta tileMapTemp,y
+		sta tileMapTemp+32,y
 		dex
+		dey
 		bpl -
 		lda #0
 		sta Pointer1
@@ -3830,8 +3839,39 @@ disolveANDORChar
 		sta fileChars+(12*8),x
 		dex
 		bpl -
+		; patch the colours
+		ldx LevelData.levelGraphicsSet
+		lda WallColourLUT,x
+		ldy #23
+-		sta fileCharCols+16,y
+		dey
+		bpl -
 		rts		
 			
+
+copyFruitChars
+		ldx LevelData.levelGraphicsSet
+		lda BackCharsLUT,x
+		tax
+		ldy #31
+-		lda AppleChars,x
+		sta fileChars+(40*8),y
+		dex
+		dey
+		bpl -
+		lda LevelData.LevelGraphicsSet
+		asl a
+		asl a ; x4
+		tax
+		ldy #0
+-		lda FruitColourLut,x
+		sta fileCharCols+40,y
+		inx
+		iny
+		cpy #4
+		bcc -
+		rts
+
 unpackSprites	
 		lda #<fileSprites	
 		sta Pointer1	
@@ -4028,6 +4068,7 @@ DisolveANDORROffsetLUT		.byte 3   ,3   ,5   ,5   ,7   ,8   , 0   ,0   ,0   ,0   
 EntitySpriteColours		.byte 4,15,10,14,15,5,3,14
 EntitySpriteStartFrame	.byte kSprBase+32,kSprBase+40,kSprBase+48,kSprBase+56,kSprBase+64,kSprBase+72,kSprBase+80,kSprBase+88
 
+BackCharsLUT .byte 32-1,64-1,96-1,128-1
 SpriteUnpackTBL
 .byte 1,1
 .byte 1,1
@@ -4136,9 +4177,9 @@ screenRowLUTHi
 .next
 
 BackChars1 .binary "back_chars_1.raw"
-BackChars2 .binary "back_chars_1.raw"
-BackChars3 .binary "back_chars_1.raw"
-BackChars4 .binary "back_chars_1.raw"
+BackChars2 .binary "back_chars_2.raw"
+BackChars3 .binary "back_chars_3.raw"
+BackChars4 .binary "back_chars_4.raw"
 BlockChars1 .binary "wall1_chars.raw"
 BlockChars2 .binary "wall2_chars.raw"
 BlockChars3 .binary "wall3_chars.raw"
@@ -4150,7 +4191,12 @@ aSphereChars .binary "sphere_chars.raw"
 LowerFixedChars .binary "fixed_section_chars.raw"
 UpperFixedChars .binary "top_fixed_chars.raw"
 EmptyDisolveChars .binary "empty_disolve_chars.raw"
-
+WallColourLUT .byte 3+8,4+8,5+8,7+8
+FruitColourLut
+.byte 5+8,5+8,5+8,5+8 ; apple
+.byte 7+8,7+8,2+8,2+8 ; !
+.byte 5+8,5+8,2+8,2+8 ; cherry
+.byte 3+8,3+8,4+8,4+8 ; sphere
 PackedSprites .binary "sprites_small.bin"
 
 fileCharCols ;		
@@ -4181,5 +4227,6 @@ fileSprites ;
 * = $7000		
 fileTileMap; 
 .binary "testmap.raw"
-
+; to pack
+; exomizer.exe sfx sys -o qwak_ex.prg qwak.prg
 	
