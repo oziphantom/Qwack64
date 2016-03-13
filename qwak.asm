@@ -1,10 +1,67 @@
 ;----------------------------
+; TEST DEFINES
+;----------------------------
+.if BDD==1
+
+PAT .macro 
+	.byte $02
+.endm
+PXT .macro 
+	.byte $12
+.endm
+PYT .macro 
+	.byte $22
+.endm
+TTA .macro 
+	.byte $32
+.endm
+TTX .macro 
+	.byte $42
+.endm
+TTY .macro 
+	.byte $52
+.endm
+
+INR .macro 
+	.byte $62
+.endm
+
+.else
+
+PAT .macro
+	;
+.endm
+PXT .macro 
+	;
+.endm
+PYT .macro 
+	;
+.endm
+TTA .macro 
+	;
+.endm
+TTX .macro 
+	;
+.endm
+TTY .macro 
+	;
+.endm
+INR .macro 
+	;
+.endm
+
+.endif
+
+;----------------------------
 ; Constants Regeion
 ;----------------------------
 kTileXCount = 16
 kTileYCount = 12
 kLevelSizeMax = kTileXCount*kTileYCount
 kSprBase = 64
+kBulletSpriteOffset = 1
+kEntsSpriteOffset = 2
+kBulletCollisionbox = 2
 kSprites .block
 	fish = kSprBase+80
 	spiderLeft = kSprBase+72
@@ -14,6 +71,7 @@ kSprites .block
 	springExpand = kSprBase+42
 	springFull = kSprBase+43
 	springFall = kSprBase+44
+	bulletSprite = kSprBase+121
 .bend
 kSpiderValues .block
 	yFallDelta = 1
@@ -24,7 +82,6 @@ kSpiderValues .block
 	pauseEndFallFrames = 32
 	riseDelayTime = 4
 .bend
-
 kVectors .block
 	charBase = $4000
 	spr0ID = charBase+1016
@@ -52,13 +109,16 @@ kTimers .block
 kEntity .block
 	heli = $00
 	spring = $01
-	word = $02
+	worm = $02
 	bat = $03
 	ghost = $04
 	spider = $05
 	fish = $06
 	circler = $07
-	maxEntities = 31
+	bubble = $08
+	maxEntities = 28
+	maxBubbleMakers = 5
+	maxNumBubblesPerMaker = 2
 .bend
 kFishLimits .block
 	startTwo = 250-21-(8*6) ; 165
@@ -123,22 +183,26 @@ kBlocks .block
 	bottomRight = 3
 	leftShadow = 5
 	topLeftCorner = 35
+	exit = 22
+	wall = 7
 .bend
-
 kPlayerState .block
+	appear = 0
 	normal = 1
 	flap = 2
-	jump = 8
+	jump = 3
 	exit = 4
-	dead = 16
+	dead = 5
 .bend
-
 kPlayerStateExit .block
 	waitForAnimation = 0
 .bend
-
 kPlayerStateDeath .block
 	animate = 0
+.bend
+kIntermission .block
+	firstExit = kTileXCount*5
+	secondExit = (kTileXCount*6)-1
 .bend
 
 .include "qwak_structs.asm"
@@ -146,7 +210,11 @@ kPlayerStateDeath .block
 ;----------------------------
 ; ZP Regeion
 ;----------------------------
-*= $02 
+
+
+*= $00 
+ZP_START ;@@RAM
+.byte ?,? ; 00.01 
 mplexZP .dstruct sMplexZP
 LevelTileMapPtrLo .byte ?
 LevelTileMapPtrHi .byte ?
@@ -181,14 +249,28 @@ TestingSprX1		.byte ?
 TestingSprX2		.byte ?
 TestingSprY1		.byte ?
 TestingSprY2		.byte ?
+GameStatePointer	.word ?
+ZP_END ; @@ENDRAM
 
-.cerror * > $FF, "Too many ZP variables"
+ .cerror * > $FF, "Too many ZP variables"; }}}
+
+
+
+;----------------------------
+; Dumy Stack Regeion
+;----------------------------
+* = $100
+STACK_START ; @@RAM
+	.fill 256
+STACK_END  ; @@ENDRAM
+
+
 ;----------------------------
 ; Variables
 ;----------------------------
 
-variables = $0200
 * = $0200
+variables = $0200 ;@@RAM
 joyLeft	 .byte ?
 joyRight .byte ?
 joyUp	 .byte ?
@@ -248,40 +330,41 @@ CollideInternalTTLX .byte ?
 CollideInternalTBRX .byte ?
 CollideInternalTTLY .byte ?
 CollideInternalTBRY .byte ?
-DidClipX			.byte ? ; this is if the add X with MSB function did clip the Y
-;.warn "Size of variables = ", *-variables
+DidClipX			.byte ?  ; this is if the add X with MSB function did clip the Y
 
+;.warn "Size of variables = ", *-variables
+VARIABLES_END ;@@ENDRAM
 .cerror * > $400, "Too many variables"
 
+
+; ----- @Map Temp Store@ -----
+
 * = $0400
-tileMapTemp .fill 240
+tileMapTemp .fill 240 ;@@RAM
 
 .cerror * > $500, "Too much level data"
-
+MAP_TEMP_STORE_END ; @@ENDRAM
 ;----------------------------
 ; Unpacked Code section
 ;----------------------------
 
 * = $c000
-mplexBuffer .dstruct sMplexBuffer 
-irqBuffers .fill irqLength * 8
+mplexBuffer     .dstruct sMplexBuffer ;@@RAM
+mplexCodeBuffer .dstruct sMplexCodeBuffers ;@@ENDRAM @@RAMEX
+irqBuffers .fill irqLength * 8 
+irqBuffEnd ;@@ENDRAMEX 
 
 .cerror * > $D000, "Too much Unpacked Code"
-
-*= $0801 ; 00 0C 08 0A 00 9E 20 32 30 36 34 00 00
-	.word (+), 2005 ;pointer, line number
-	.null $9e, ^start;will be sys 4096
-+	.word 0	 ;basic line end
-	
-	
 ;---------------------------
 ; MACROS
 ;---------------------------
-mCallFunctioTable .macro
+
+mCallFunctionTable .macro
 	lda \1.hi,\2
 	pha
 	lda \1.lo,\2
 	pha
+	.INR
 	rts
 .endm
 
@@ -290,6 +373,25 @@ lo .byte <(\@)-1
 hi .byte >(\@)-1	
 .endm	
 
+mConvertXToEntSpriteX .macro
+	inx
+	inx
+.endm
+
+mRestoreEntSpriteX .macro
+	dex
+	dex
+.endm
+
+
+*= $0801 ; 00 0C 08 0A 00 9E 20 32 30 36 34 00 00
+CODE_START ;@@ROM
+	.word (+), 2005 ;pointer, line number
+	.null $9e, ^start;will be sys 4096
++	.word 0	 ;basic line end
+	
+	
+	
 *= $0810
 start
 		jsr setirq ; clear all interupts and put out own in
@@ -335,58 +437,71 @@ start
 		ldx #0
 		stx LevelData.levelGraphicsSet
 RESET		
+		jsr clearPlayerStuct
+		jsr clearAllSprites
+		jsr emptyCRAM	
+		jsr plotStatusArea
+		; plot bottom row of screen
+		ldx #39
+		lda #1
+-		sta kVectors.charBase + ( 24*40 ),x
+		dex
+		bpl -	
+		lda #5
+		sta GameData.lives
+		jsr pltLives
+		lda #<GAMELOOP
+		sta GameStatePointer
+		lda #>GAMELOOP
+		sta GameStatePointer+1
+		lda #kPlayerState.appear
+		sta PlayerData.state
+		lda #0
+		sta GameData.currLevel
+		
+		; this needs to be done first time outside the loop
 		jsr buildBackAndShadowChars
 		jsr BuildDisolveChars
 		jsr copyFruitChars
-		jsr clearPlayerStuct
-		; clear Mplex 
-		ldx #$00	  ;init x with 00
--		txa			  ;transfer x to a to create index vals
-		sta mplexZP.sort,x	;store it in the sort table
-		lda #255
-		sta mplexBuffer.ypos,x	; disbale all sprites
-		inx			  
-		cpx # mPlex.kMaxSpr+1	 ;have we reached 32 yet?
-		bne -
-		jsr emptyCRAM
+.if BDD=0		
+		; main loop
+MAINLOOP
+
+-		lda mplexZP.lsbtod	
+		beq -	
+		dec mplexZP.lsbtod	
+.else	
+MAINLOOP
+		inc $600	
+.endif		
+		jmp (GameStatePointer)	
+;----------------------------			
+; GAME LOOP			
+;----------------------------			
+GAMELOOP	
+		jsr updateTickdowns
+		ldx PlayerData.state
+		.mCallFunctionTable PlayerCodeLUT,x
+PlayerCodeLUT .mMakeFunctionTable PlayerAppear,PlayerNormal,PlayerNormal,PlayerNormal,PlayerExit,PlayerDead
+
+PlayerAppear
 		jsr convertLevelToTileMap
 		jsr addShadowsToMap
 		ldx # <tileMapTemp
 		ldy # >tileMapTemp
 		jsr plotTileMap
-		jsr plotStatusArea
 		jsr resetPlayerData 
 		jsr setPlayerToSpawnPoint
 		jsr unpackEntityBytes
 		jsr setEntitySprites
-		; plot bottom row of screen
-		ldx #39
 		lda #1
 		sta mplexZP.lsbtod
--		sta kVectors.charBase + ( 24*40 ),x
-		dex
-		bpl -
-		lda #5
-		sta GameData.lives
-		jsr pltLives
-		; main loop
-MAINLOOP
--		lda mplexZP.lsbtod	
-		beq -	
-		dec mplexZP.lsbtod	
-;	inc $d020
-;	inc $d020
-		jsr updateTickdowns
-		ldx #0
-		lda PlayerData.state
-		cmp #kPlayerState.exit
-		bne +
-		ldx #1
-+		cmp #kPlayerState.dead
-		bne +
-		ldx #2
-+		.mCallFunctioTable PlayerCodeLUT,x
-PlayerCodeLUT .mMakeFunctionTable PlayerNormal,PlayerExit,PlayerDead
+		lda #kPlayerState.normal
+		sta PlayerData.state
+		lda #0
+		sta GameData.exitOpen
+		jmp MAINLOOP
+		
 PlayerNormal
 		jsr BuildEntCollisionTable
 		jsr collidePlayerAgainstRest
@@ -401,12 +516,21 @@ PlayerNormal
 		lda #kPlayerState.dead		
 		sta PlayerData.state		
 		sta PlayerData.minorState	
-		jmp -		
+		jmp MAINLOOP		
 +		lda #0
 		sta PlayerData.dead
 		jsr joyToPlayerDelta
 		jsr checkSpriteToCharCollision
-		lda checkSpriteToCharData.xDeltaCheck
+		; level skip
+		lda joyUp
+		and joyDown
+		beq +
+		lda #kPlayerState.exit
+		sta PlayerData.state
+		lda #0
+		sta PlayerData.minorState
+		jmp MAINLOOP
++		lda checkSpriteToCharData.xDeltaCheck
 		beq _addY
 		;make sure x reg is 0, and call addXWithMSBAndClip
 		ldx #0
@@ -417,7 +541,7 @@ _addY
 		adc checkSpriteToCharData.yDeltaCheck
 		sta mplexBuffer.ypos
 		jsr updatePlayerAnim
-		jmp EndOfMainLoop
+		jmp EndOfGameLoop
 
 PlayerExit		
 		lda PlayerData.minorState
@@ -428,18 +552,28 @@ PlayerExit
 		jsr setPlayerAnimeTo
 		lda #kPlayerStateExit.waitForAnimation
 		sta PlayerData.minorState
-		lda LevelData.exitIndex
+		lda PlayerData.exitAtIndex
 		jsr setPlayerToIndexA
-_exit	jmp EndOfMainLoop		
+_exit	jmp EndOfGameLoop		
 _waitForAnimation			
 		jsr updatePlayerAnim			
 		bcc _exit
+		lda #<INTERLOOP
+		sta GameStatePointer
+		lda #>INTERLOOP
+		sta GameStatePointer+1
+		lda #0
+		sta PlayerData.state
+		jsr disableAllEntSprites
+		jmp MAINLOOP
+		
+incLevelGraphicSet		
 		lda LevelData.levelGraphicsSet
 		clc
 		adc #1
 		and #3
 		sta LevelData.levelGraphicsSet
-		jmp RESET
+		rts
 		
 PlayerDead
 		lda PlayerData.minorState
@@ -450,27 +584,93 @@ PlayerDead
 		jsr setPlayerAnimeTo
 		lda #kPlayerStateDeath.animate
 		sta PlayerData.minorState
-_exit	jmp EndOfMainLoop		
+_exit	jmp EndOfGameLoop		
 _waitForAnimation			
 		dec mplexBuffer.ypos
 		jsr updatePlayerAnim			
 		bcc _exit
-		jsr setPlayerToSpawnPoint
-		jsr enterOnGround
-		lda #kPlayerState.normal
+;		jsr setPlayerToSpawnPoint
+;		jsr enterOnGround
+		lda #kPlayerState.appear
 		sta PlayerData.state
 		lda #0
 		sta PlayerData.dead
-		jmp EndOfMainLoop
+		jmp EndOfGameLoop
 		
-EndOfMainLoop
+EndOfGameLoop
+		lda joyFireEvent              ; if    1 1 0 0
+		eor PlayerData.bulletActive   ; and   0 1 0 1
+		and joyFireEvent			  ; still 1 0 0 0
+		beq _noBulletStart
+		jsr startBullet
+_noBulletStart
+		jsr updateBullet
 		jsr updateEntities
+		jsr updateBubbles
 		jsr animateDoor
-;	dec $d020
-;	dec $d020	
-	
-		jmp -
+		jmp MAINLOOP
 		
+		
+;----------------------------			
+; Intermission LOOP			
+;----------------------------		
+INTERLOOP
+	jsr updateTickdowns
+	ldx PlayerData.state
+	mCallFunctionTable InterFuncLUT,x
+InterFuncLUT mMakeFunctionTable interSetUp,interMovePlayer,interEnterDoor,interNextLevel
+	
+interSetUp	
+	jsr PlotTransitionScreenAndMakeNextChars ; also set player index,exit index
+	jsr setPlayerToSpawnPoint
+	inc PlayerData.state
+	lda #1
+	sta PlayerData.movingLR
+	sta PlayerData.onGround
+	sta checkSpriteToCharData.xDeltaCheck
+	sta GameData.exitOpen
+	lda #$FF
+	sta LevelData.exitIndex+1
+	lda #0
+	jsr changePlayerDir
+	jsr setAnimateDoorToClose
+	inc GameData.currLevel
+	jmp MAINLOOP
+
+interMovePlayer	
+	ldx #0
+	jsr addXWithMSBAndClip	
+	jsr updatePlayerAnim
+	jsr animateDoor
+	lda mplexBuffer.xpos
+	cmp #8
+	bne +
+	inc PlayerData.state	
+	lda #kPlayerAnimsIndex.exit
+	jsr setPlayerAnimeTo
+	jmp MAINLOOP
++	cmp #(11*16)+kBounds.screenMinX	
+	bne +	
+	jsr setAnimateDoorToOpen		
+	lda #kIntermission.secondExit
+	sta LevelData.exitIndex
++	jmp MAINLOOP
+		
+interEnterDoor	
+	jsr updatePlayerAnim
+	bcc _exit
+	lda #kPlayerState.appear
+	sta PlayerData.state
+	lda #<GAMELOOP
+	sta GameStatePointer
+	lda #>GAMELOOP
+	sta GameStatePointer+1
+_exit
+	jmp MAINLOOP
+	
+interNextLevel
+	jmp MAINLOOP
+	
 addXWithMSBAndClip		
 	stx ZPTemp2
 	lda mplexBuffer.xmsb,x
@@ -537,8 +737,8 @@ joyToPlayerDelta
 		ora joyRight
 		beq _noLR
 		lda joyLeft
-		bne _right
-		lda #1
+		bne _left
+		lda #2
 		sta checkSpriteToCharData.xDeltaCheck
 		lda joyLeft
 		and oldJoyLeft
@@ -548,8 +748,8 @@ joyToPlayerDelta
 		lda #0
 		jsr changePlayerDir
 		jmp _noLR
-_right
-		lda #255
+_left
+		lda #254
 		sta checkSpriteToCharData.xDeltaCheck
 		lda joyRight
 		and oldJoyRight
@@ -668,7 +868,6 @@ enterOnGround
 		jsr changePlayerDir
 		rts
 
-;{{{
 .comment		
 ; Check Left and Right
 		lda joyLeft
@@ -768,7 +967,7 @@ _downOne
 		lda #1
 		sta checkSpriteToCharData.yDeltaCheck
 		rts
-.endc ;}}}
+.endc 
 
 changePlayerDir
 		sta PlayerData.facingRight
@@ -867,6 +1066,122 @@ clearPlayerStuct
 	bpl -
 	rts
 	
+
+startBullet
+	lda #1
+	sta PlayerData.bulletActive
+	lda #0
+	sta PlayerData.bulletUD
+	lda PlayerData.facingRight
+	sta PlayerData.bulletLR
+	lda mplexBuffer.xpos
+	sta mplexBuffer.xpos+kBulletSpriteOffset
+	lda mplexBuffer.ypos
+	sta mplexBuffer.ypos+kBulletSpriteOffset
+	lda mplexBuffer.xmsb
+	sta mplexBuffer.xmsb+kBulletSpriteOffset
+	lda #200
+	sta TickDowns.bulletLifeTimer
+	rts
+	
+updateBullet
+	lda PlayerData.bulletActive
+	beq bulletExit
+	lda TickDowns.bulletLifeTimer
+	bne bulletNoDead
+removeBullet
+	lda #0
+	sta PlayerData.bulletActive
+	lda #255
+	sta mplexBuffer.ypos+kBulletSpriteOffset
+bulletExit
+	rts
+bulletNoDead	
+	lda #kBulletCollisionbox
+	sta CollideSpriteBoxIndex
+	lda #kBulletSpriteOffset
+	sta CollideSpriteToCheck
+	lda #<UpdateBulletEndYColl
+	sta Pointer1
+	lda #>UpdateBulletEndYColl
+	sta Pointer1+1
+	lda #0
+	sta CollisionResult
+	ldy #0
+	lda PlayerData.bulletUD
+	beq +
+	jmp entDown
++	jmp entUp
+UpdateBulletEndYColl
+	lda CollisionResult	
+	beq _updateY
+	lda PlayerData.bulletUD
+	eor #1
+	sta PlayerData.bulletUD
+	bpl _checkX
+_updateY
+	lda mplexBuffer.ypos+kBulletSpriteOffset	
+	clc	
+	adc checkSpriteToCharData.yDeltaCheck
+	sta mplexBuffer.ypos+kBulletSpriteOffset	
+_checkX	
+	lda #<UpdateBulletEndXColl
+	sta Pointer1
+	lda #>UpdateBulletEndXColl
+	sta Pointer1+1
+	lda #$00
+	sta CollisionResult
+	ldy #0
+	lda PlayerData.bulletLR
+	bne +
+	jmp entRight
++	jmp entLeft
+	; do some more collision checking here
+UpdateBulletEndXColl	
+	lda CollisionResult	
+	beq _updateX
+	lda PlayerData.bulletLR
+	eor #1
+	sta PlayerData.bulletLR
+	bpl _checkEnts
+_updateX
+	ldx #kBulletSpriteOffset	
+	jsr addXWithMSBAndClip	
+_checkEnts	
+	jsr collideBulletAgainstRest	
+	bcc _exit2 ; didn't hit one	
+	lda #0
+	sta EntityData.active,x
+	lda #1
+	sta EntityData.speed,x
+	lda #255
+	sta mplexBuffer.ypos+kEntsSpriteOffset,x
+	sta EntityData.entState,x
+	sta EntityData.movTimer,x
+	jmp removeBullet
+_exit2
+	rts
+
+clearAllSprites
+	ldx #0
+clearSpritesInternal
+-	txa			  ;transfer x to a to create index vals
+	sta mplexZP.sort,x	;store it in the sort table
+	lda #255
+	sta mplexBuffer.ypos,x	; disbale all sprites
+	inx			  
+	cpx # mPlex.kMaxSpr+1	 ;have we reached 32 yet?
+	bne -
+	rts
+	
+disableAllEntSprites
+	lda #255
+	ldx #mplex.kMaxSpr
+-	sta mplexBuffer.ypos,x
+	dex
+	bne -
+	rts
+	
 emptyCRAM
 		ldx #00
 		lda #0
@@ -874,7 +1189,7 @@ emptyCRAM
 		sta $d900,x
 		sta $da00,x
 		sta $db00,x
-		sta $dc00,x
+	;	sta $dc00,x
 		dex
 		bne -
 		rts
@@ -883,15 +1198,21 @@ convertLevelToTileMap
 		lda #0
 		sta LevelData.numKeys
 		sta LevelData.totalKeys
+		sta EntityData.numPipes
+		sta EntityData.lastPipeUsed
+		lda #$FF
+		sta LevelData.exitIndex
+		sta LevelData.exitIndex+1
 		lda #<tileMapTemp
 		sta Pointer1
 		sta LevelTileMapPtrLo
 		lda #>tileMapTemp
 		sta Pointer1+1
 		sta LevelTileMapPtrHi
-		lda #<fileTileMap
+		ldx GameData.currLevel
+		lda LevelTableLo,x
 		sta Pointer2
-		lda #>fileTileMap
+		lda LevelTableHi,x
 		sta Pointer2+1
 ; read level pointers
 		ldy #0
@@ -938,6 +1259,8 @@ _loop	; read in 16 bytes
 		beq _key
 		cmp # kTiles.key4
 		beq _key
+		cmp # kTiles.pipe
+		beq _pipe
 		cmp # kTiles.diss
 		beq _dissBlock
 		; covert and then push out		
@@ -983,9 +1306,25 @@ _dissBlock
 		jmp _cont		
 _exitPos
 		lda ActiveTileIndex
+		ldx LevelData.exitIndex
+		cpx #$FF
+		bne _2nd
 		sta LevelData.exitIndex
-		lda # kTiles.exit
+		jmp +
+_2nd	sta LevelData.exitIndex+1		
++		lda # kTiles.exit
 		jmp _cont
+_pipe
+		ldx EntityData.numPipes
+		lda ActiveTileIndex
+		sec
+		sbc #16
+		sta EntityData.pipeIndex,x
+		inx
+		stx EntityData.numPipes
+		lda # kTiles.pipe
+		jmp _cont
+		
 
 addShadowsToMap				
 	ldy #0	
@@ -1207,7 +1546,7 @@ plotTileMap
 		sta Pointer3
 		lda #$d8
 		sta Pointer3+1
-		lda #12 ; num rows
+		lda #kTileYCount ; num rows
 		pha
 _pltY	ldy #00 ; num cols
 		tya
@@ -1220,27 +1559,23 @@ _pltX	lda (Pointer1),y ; tile num
 		lda Pointer2
 		adc #2
 		sta Pointer2
+		sta Pointer3
 		lda Pointer2+1
 		adc #0
 		sta Pointer2+1
-		clc
-		lda Pointer3
-		adc #2
-		sta Pointer3
-		lda Pointer3+1
-		adc #0
+		eor # (>kVectors.charBase) ^ $d8
 		sta Pointer3+1
 		pla
 		clc
 		adc #1
 		pha
 		tay
-		cpy #20 ; #16
+		cpy #kTileXCount
 		bne _pltX
 		pla
 		clc
 		lda Pointer1
-		adc #16 ; 16
+		adc #kTileXCount
 		sta Pointer1
 		lda Pointer1+1
 		adc #00
@@ -1252,17 +1587,13 @@ _pltX	lda (Pointer1),y ; tile num
 		pha
 		clc
 		lda Pointer2
-		adc #40 ;48
+		adc #48 ;48
 		sta Pointer2
+		sta Pointer3
 		lda Pointer2+1
 		adc #0
 		sta Pointer2+1
-		clc
-		lda Pointer3
-		adc #40 ;48
-		sta Pointer3
-		lda Pointer3+1
-		adc #0
+		eor # (>kVectors.charBase) ^ $d8
 		sta Pointer3+1
 		jmp _pltY
 _exit	rts
@@ -1350,8 +1681,9 @@ _joyEnd lda oldJoyUp
 		rts
 		
 _joyUp	
-		lsr ; skip down bit
 		stx joyUp
+		lsr ; skip down bit
+		bcc _joyDown
 		jmp _checkLR
 		
 _joyDown 
@@ -1368,10 +1700,10 @@ _joyRight
 		jmp _checkFire
 	
 
-CollisionBoxesX .byte 02,02,02 
-CollisionBoxesW .byte 13,13,13 
-CollisionBoxesY .byte 00,02,00 
-CollisionBoxesH .byte 14,16,20 
+CollisionBoxesX .byte 02,02,02,04 
+CollisionBoxesW .byte 13,13,13,16 
+CollisionBoxesY .byte 00,02,00,04 
+CollisionBoxesH .byte 14,16,20,16 
 
 
 convertXSingleByteEntX	
@@ -1459,22 +1791,34 @@ newCollision
 	rts
 	
 ClipY
-	cmp # 225
-	bcs _underflowY
-	cmp # 200
-	bcs _overflowY
+;	cmp #248 ; -8
+;	bcs _under
+;	cmp #192
+;	bcc _safe
+;	cmp #192+8
+;	bcs _wrap
+;	lda #192
+;	rts
+;_under 
+;	lda #191
+;_safe
+;	rts
+;_wrap
+;	lda #0
+;	rts
+	cmp #208
+	bcs +
+	rts ; 0 - 192 = safe 192-208 = shared 16 off screen
++	cmp #240
+	bcc _bottomOfScreen
+	; top of screen
+	lda #193
 	rts
-_underflowY	
-	clc	
-	adc #200	
-	bne _neitherY	
-_overflowY		
-	sec		
-	sbc #200				
-_neitherY
+_bottomOfScreen
+	lda #208
 	rts
 
-; {{{	
+	
 .comment	
 CSTCCInteral
 	ldx mplexBuffer.xpos
@@ -1492,7 +1836,7 @@ CSTCCInteral
 	sta playerTile1X,x
 	rts
 .endc	
-;}}}	
+	
 	
 checkSpriteToCharCollision
 	lda checkSpriteToCharData.yDeltaCheck
@@ -1544,6 +1888,8 @@ _skipTR
 _skipBL	
 	lda CollideCharBRI
 	cmp CollideCharTRI
+	beq _skipBR
+	cmp CollideCharBLI
 	beq _skipBR
 	tax
 	lda CollideCharBRC
@@ -1753,11 +2099,28 @@ springFunc
 	jsr clearTileNew
 	lda #1
 	sta PlayerData.hasSpring
+	sta PlayerData.canFloat
 	rts
+	
 potionFunc
 	jsr clearTileNew
-	lda #1
-	sta PlayerData.canFloat
+	ldx #0	
+	stx ActiveTileIndex	
+_loop	
+	lda tileMapTemp,x	
+	cmp #kTiles.spike	
+	bne _next	
+	lda #kTiles.fruit	
+	sta tileMapTemp,x
+	jsr pltSingleTileNew	
+_next	
+	lda ActiveTileIndex	
+	clc	
+	adc #1	
+	sta ActiveTileIndex
+	tax
+	cmp #kLevelSizeMax	
+	bne _loop	
 	rts
 shildFunction
 	jsr clearTileNew
@@ -1765,11 +2128,16 @@ shildFunction
 	sta PlayerData.hasShield
 	rts		
 exitFunc	
+	lda GameData.exitOpen
+	beq _notOpen
 	lda #0
 	sta GameData.exitOpen
+	lda ActiveTileIndex
+	sta PlayerData.exitAtIndex
 	lda #kPlayerState.exit
 	sta PlayerData.state
 	sta PlayerData.minorState
+_notOpen
 	rts
 
 awardLife
@@ -1778,21 +2146,54 @@ awardLife
 	
 animateDoor
 	lda GameData.exitOpen
-	beq _exit
+	beq aDexit
 	lda TickDowns.doorAnim
-	bne _exit
+	bne aDexit
 	lda #kTimers.DoorAnimeRate
 	sta TickDowns.doorAnim
 	lda LevelData.exitIndex
 	sta ActiveTileIndex
+	jsr animateInternal
+	lda LevelData.exitIndex+1
+	cmp #$ff
+	beq aDexit
+	sta ActiveTileIndex
+	jmp animateInternal
+aDexit 
+	rts	
+		
+animateInternal
 	lda LevelData.exitFrame
+animateDoorCmp ; @@ENDROM @@RAMEX
 	cmp #kDoorOpen
-	beq _exit
+	beq aDexit
+animateDoorCLC ; @@ENDRAMEX @@ROM
 	clc
+animateDoorCLCEND
 	adc #1
 	sta LevelData.exitFrame
 	jmp pltSingleTileNoLookupNew ; skips below
-_exit
+	
+setAnimateDoorToOpen
+	lda #kDoorClosed
+	sta LevelData.exitFrame
+	lda #kDoorOpen
+	sta animateDoorCmp+1
+	lda #$18 ; CLC
+	sta animateDoorCLC
+	lda #$69 ; ADC #
+	sta animateDoorCLC+1
+	rts
+	
+setAnimateDoorToClose
+	lda #kDoorOpen
+	sta LevelData.exitFrame
+	lda #kDoorClosed
+	sta animateDoorCmp+1
+	lda #$38 ; SEC
+	sta animateDoorCLC
+	lda #$E9 ; SBC #
+	sta animateDoorCLC+1
 	rts
 	
 countTempMapTile
@@ -1969,6 +2370,37 @@ convertIndexToScreenAndCRAM
 	sta Pointer3+1
 	rts
 	
+; returns Y into ZPTemp
+convertIndexToEntSpriteXY	
+	sta ZPTemp3
+	and #$f0
+	clc
+	adc #50 
+	sta mplexBuffer.ypos+kEntsSpriteOffset,x
+	sta ZPTemp
+	lda ZPTemp3
+	and #$0f
+	asl a
+	asl a
+	asl a
+	asl a
+	cmp #$f0
+	bne _notMsb
+	lda #0
+	sta mplexBuffer.xmsb+kEntsSpriteOffset,x
+	lda #8
+	bne _storeX
+_notMsb
+	pha
+	lda #$ff
+	sta mplexBuffer.xmsb+kEntsSpriteOffset,x
+	pla
+	clc
+	adc #24
+_storeX
+	sta mplexBuffer.xpos+kEntsSpriteOffset,x
+	rts
+		
 convertSpriteXSingleByte
 	lda mplexBuffer.xmsb,x
 	beq _MSB
@@ -2118,6 +2550,13 @@ _Y	pla
 	clc
 	adc #kBounds.screenMinY
 	sta mplexBuffer.ypos
+	ldx #kBulletSpriteOffset
+	lda #kSprites.bulletSprite
+	sta mplexBuffer.sprp,x
+	lda #2
+	sta mplexBuffer.sprc,x
+	lda #255
+	sta mplexBuffer.ypos,x
 	rts
 _msbMode
 	lda #8
@@ -2148,6 +2587,13 @@ _next
 ; D initial direction
 unpackEntityBytes
 	ldy #0
+	tya
+	ldx #kEntity.maxEntities
+-	sta EntityData.animBase,x
+	sta EntityData.animFrame,x
+	sta EntityData.entState,x
+	dex
+	bpl -
 	lda (EntityDataPointer),y
 	sta ZPTemp2 ; number of entities
 	sta EntityData.number
@@ -2155,29 +2601,8 @@ unpackEntityBytes
 	iny			; next byte
 	ldx #0
 	sta EntNum
-_l	lda (EntityDataPointer),y
-	and #$0f
-	asl a
-	asl a
-	asl a
-	asl a
-	clc
-	adc #50 
-	sta mplexBuffer.ypos+1,x
-	sta ZPTemp
-	lda (EntityDataPointer),y
-	and #$f0
-	cmp #$f0
-	bne _notMsb
-	lda #0
-	sta mplexBuffer.xmsb+1,x
-	lda #8
-	bne _storeX
-_notMsb
-	clc
-	adc #24
-_storeX
-	sta mplexBuffer.xpos+1,x
+_l  lda (EntityDataPointer),y
+	jsr convertIndexToEntSpriteXY
 	iny			; next byte	
 	lda (EntityDataPointer),y
 	lsr a
@@ -2189,6 +2614,7 @@ _storeX
 	sta EntityData.originalY,x
 	lda #0
 	sta EntityData.entState,x
+	sta EntityData.speed,x
 	lda (EntityDataPointer),y
 	and #3
 	sta EntityData.direction,x	
@@ -2199,23 +2625,51 @@ _storeX
 	dec ZPTemp2
 	lda ZPTemp2
 	bne _l
-_e	rts
+_e	
+	ldx EntityData.number ; keep number
+	stx EntityData.pipeBubbleStart
+	lda EntityData.numPipes
+	beq _noPipes
+	.cerror kEntity.maxNumBubblesPerMaker != 2, "need to change code so it handles new mul"
+	asl a ; times two
+	clc ; probably not needed as num pipes must be below 128
+	adc EntityData.number
+	sta EntityData.number ; add the bubble ents
+_setupBubbleLoop
+	lda #kEntity.bubble
+	sta EntityData.type,x
+	lda #0
+	sta EntityData.entState,x
+	sta EntityData.direction,x
+	sta EntityData.active,x
+	inx
+	cpx EntityData.number
+	bne _setupBubbleLoop
+_noPipes
+	rts
 	
 setEntitySprites
-	ldx # kEntity.maxEntities
-_l	lda EntityData.active,x
-	bne _active
-_c	dex
-	bpl _l
-	rts
+;	ldx # kEntity.maxEntities
+_l;	lda EntityData.active,x
+;	bne _active
+;_c	dex
+;	bpl _l
+;	rts
+	ldx EntityData.number
+	beq _exit
 _active
+	.PXT
 	stx CurrentEntity
 	lda EntityData.type,x
 	tay
 	lda EntitySpriteColours,y
-	sta mplexBuffer.sprc+1,x
-	jsr SetEntSpriteForDirection
-	jmp _c
+	sta mplexBuffer.sprc+kEntsSpriteOffset,x
+	jsr setEntSpriteForDirection
+	.TTX
+	dex
+	bpl _active
+_exit
+	rts
 	
 
 ; build hte collision data for each ent first
@@ -2224,7 +2678,9 @@ BuildEntCollisionTable
 innerEntitiesLoopColl
 	lda EntityData.active,x
 	beq updateEntitiesLoopColl
+	.PXT
 	jsr MakeMinMaxXYForX	
+	.TTX	
 updateEntitiesLoopColl
 	dex
 	bpl innerEntitiesLoopColl
@@ -2233,53 +2689,61 @@ updateEntitiesLoopColl
 updateEntities
 	ldx # kEntity.maxEntities-1
 innerEntitiesLoop
+	.PXT
 	lda EntityData.active,x
 	bne EntitiesActive
+	lda EntityData.entState,x
+	bpl updateEntitiesLoop
+	dec EntityData.movTimer,x
+	lda EntityData.movTimer,x
+	bne updateEntitiesLoop
+	lda EntityData.originalY,x
+	sta mplexBuffer.yPos+kEntsSpriteOffset,x
+	lda #0
+	sta EntityData.entState,x
+	lda #1
+	sta EntityData.active,x
 updateEntitiesLoop
+	.TTX
 	dex
 	bpl innerEntitiesLoop
 	rts
 EntitiesActive
 	stx CurrentEntity
 	lda EntityData.type,x
-	cmp #kEntity.fish
-	bne +
-	jmp entFishFunc
-+	cmp #kEntity.spider
-	bne +
-	jmp entSpiderFunc	
-+	cmp #kEntity.circler	
-	bne +	
-	jmp circlerFunc	
-+	cmp #kEntity.spring
-	bne +
-	jmp springEntFunc
+	tay	
+	.mCallFunctionTable EntUpdateFuncLUT,y		
+EntUpdateFuncLUT .mMakeFunctionTable entNormalMovement,springEntFunc,EntNormalMovement,EntNormalMovement,EntNormalMovement,entSpiderFunc,entFishFunc,circlerFunc,entBubble
+
+entNormalMovement	
 +	jsr updateEntAnimAndSetSprite
 	lda CollFrameForEnt,y	
 	sta CollideSpriteBoxIndex	
-	inx
+	.TTX
+	.mConvertXToEntSpriteX
 	stx CollideSpriteToCheck
 	lda #<handleEntCollisionResult
 	sta Pointer1
 	lda #>handleEntCollisionResult
 	sta Pointer1+1
 	ldx CurrentEntity
+	lda EntityData.speed,x
+	tay
 	lda EntityData.direction,x	
 	tax
 	lda #0
 	sta CollisionResult
-	lda ENTDirectionCheckFuncLUTHi,x
-	pha
-	lda ENTDirectionCheckFuncLUTLo,x
-	pha
-	rts
-		
+	.mCallFunctionTable ENTDirectionCheckFuncLUT,x
+ENTDirectionCheckFuncLUT .mMakeFunctionTable entRight,entUp,entLeft,entDown
 ;right, up, left ,down			
-ENTDirectionCheckFuncLUTLo .byte <entRight-1,<entUp-1,<entLeft-1,<entDown-1	
-ENTDirectionCheckFuncLUTHi .byte >entRight-1,>entUp-1,>entLeft-1,>entDown-1	
+;ENTDirectionCheckFuncLUTLo .byte <entRight-1,<entUp-1,<entLeft-1,<entDown-1	
+;ENTDirectionCheckFuncLUTHi .byte >entRight-1,>entUp-1,>entLeft-1,>entDown-1	
 	
+entPositiveTBL .byte 001,002
+entNegativeTBL .byte 255,254
+
 entRight	
-	lda #1	
+	lda entPositiveTBL,y	
 	sta checkSpriteToCharData.xDeltaCheck
 	lda #0
 	sta checkSpriteToCharData.yDeltaCheck
@@ -2296,7 +2760,7 @@ entRightNoDelta
 entUp	
 	lda #$00	
 	sta checkSpriteToCharData.xDeltaCheck
-	lda #$ff
+	lda entNegativeTBL,y
 	sta checkSpriteToCharData.yDeltaCheck	
 entUpNoDelta
 	jsr newCollision
@@ -2309,7 +2773,7 @@ entUpNoDelta
 	jmp (Pointer1)
 	
 entLeft	
-	lda #$ff	
+	lda entNegativeTBL,y	
 	sta checkSpriteToCharData.xDeltaCheck
 	lda #0
 	sta checkSpriteToCharData.yDeltaCheck
@@ -2326,7 +2790,7 @@ entLeftNoDelta
 entDown	
 	lda #$00	
 	sta checkSpriteToCharData.xDeltaCheck
-	lda #$01
+	lda entPositiveTBL,y
 	sta checkSpriteToCharData.yDeltaCheck
 entDownNoDelta
 	jsr newCollision
@@ -2352,46 +2816,6 @@ _exit
 _next
 	lda #4
 	sta EntityData.movTimer,x
-
-;	inc EntityData.entState,x
-;{{{
-.comment	
-	lda EntityData.direction,x
-	cmp # kDirections.up
-	bne _fishDown
-	;fish up
-	lda #kSprBase+80
-	;sta mplex.sprp+1,x ; will need to change to animation type
-	sta EntityData.animBase,x
-	lda mplexBuffer.ypos+1,x
-	cmp # kFishLimits.startTwo
-	bcc _fupNormal
-	lda #0
-	sta EntityData.entState,x
-	jmp _moveFish
-_fupNormal	
-	lda EntityData.entState,x
-	cmp #kSinJumpFall
-	bcc _moveFish
-	lda # kDirections.down
-	sta EntityData.direction,x
-	jmp _moveFish
-_fishDown
-	lda #kSprBase+84
-	;sta mplex.sprp+1,x
-	sta EntityData.animBase,x
-	lda EntityData.entState,x
-	cmp #kSinJumpMax
-	bcc _checkMaxY
-	dec EntityData.entState,x
-_checkMaxY	
-	lda mplexBuffer.ypos+1,x
-	cmp # kFishLimits.maxY
-	bcc _movefish
-	lda # kDirections.up
-	sta EntityData.direction,x
-.endc
-;}}}
 _moveFish	
 	lda EntityData.entState,x
 	clc
@@ -2403,7 +2827,7 @@ _storeDirect
 	sta EntityData.entState,x
 _keepGoing
 	tay
-	lda mplexBuffer.ypos+1,x
+	lda mplexBuffer.ypos+kEntsSpriteOffset,x
 	clc
 	adc SinJumpTable,y
 	cmp # kFishLimits.maxY
@@ -2415,7 +2839,7 @@ _keepGoing
 	lda #kFishLimits.maxY
 	bcc _store
 _store
-	sta mplexBuffer.ypos+1,x
+	sta mplexBuffer.ypos+kEntsSpriteOffset,x
 	lda EntityData.entState,x
 	lsr a
 	lsr a ; div 4
@@ -2425,20 +2849,14 @@ _store
 _safe
 	clc
 	adc #kSprites.fish
-	sta mplexBuffer.sprp+1,x
+	sta mplexBuffer.sprp+kEntsSpriteOffset,x
 	jmp nextEnt
 
 entSpiderFunc	
 	lda EntityData.entState,x	
 	tay	
-	lda SpiderEntFuncLUTHi,y	
-	pha	
-	lda SpiderEntFuncLUTLo,y	
-	pha		
-	rts
-	
-SpiderEntFuncLUTLo .byte <spiderLookPlayer-1,<spiderFall-1,<spiderRise-1	
-SpiderEntFuncLUTHi .byte >spiderLookPlayer-1,>spiderFall-1,>spiderRise-1	
+	.mCallFunctionTable SpiderEntFuncLUT,y
+SpiderEntFuncLUT .mMakeFunctionTable spiderLookPlayer,spiderFall,spiderRise 
 	
 spiderLookPlayer
 	ldx #0
@@ -2446,7 +2864,7 @@ spiderLookPlayer
 	jsr convertSpriteXSingleByte
 	sta ZPTemp
 	ldx CurrentEntity
-	inx
+	.mConvertXToEntSpriteX
 	jsr convertSpriteXSingleByte
 	sbc ZPTemp
 	sta ZPTemp
@@ -2472,7 +2890,7 @@ _storeSprite
 _noAnim	
 	ldx CurrentEntity
 	lda EntityData.animBase,x
-	sta mplexBuffer.sprp+1,x
+	sta mplexBuffer.sprp+kEntsSpriteOffset,x
 	jmp nextEnt
 _left
 	cmp #kSpiderValues.leftStartWiggle
@@ -2494,7 +2912,7 @@ spiderFall
 	lda CollFrameForEnt,y	
 	sta CollideSpriteBoxIndex	
 	ldx CurrentEntity	
-	inx
+	.mConvertXToEntSpriteX
 	stx CollideSpriteToCheck
 	lda #$00	
 	sta checkSpriteToCharData.xDeltaCheck
@@ -2512,10 +2930,10 @@ spiderFall
 	jmp nextEnt
 _noColide
 	ldx CurrentEntity
-	lda mplexBuffer.ypos+1,x
+	lda mplexBuffer.ypos+kEntsSpriteOffset,x
 	clc
 	adc #kSpiderValues.yFallDelta
-	sta mplexBuffer.ypos+1,x
+	sta mplexBuffer.ypos+kEntsSpriteOffset,x
 	jmp nextEnt
 		
 spiderRise	
@@ -2524,10 +2942,10 @@ spiderRise
 	bpl +
 	lda #kSpiderValues.riseDelayTime
 	sta EntityData.movTimer,x
-	lda mplexBuffer.ypos+1,x
+	lda mplexBuffer.ypos+kEntsSpriteOffset,x
 	sec
 	sbc #1
-	sta mplexBuffer.ypos+1,x
+	sta mplexBuffer.ypos+kEntsSpriteOffset,x
 	cmp EntityData.originalY,x
 	bne +
 	lda #0
@@ -2547,14 +2965,14 @@ _cirActive
 	lda EntityData.entState,x
 	ldy CurrentEntity
 	tax
-	lda mplexBuffer.xpos+1,y
+	lda mplexBuffer.xpos+kEntsSpriteOffset,y
 	clc
 	adc CircleJumpTableStart,x
-	sta mplexBuffer.xpos+1,y
-	lda mplexBuffer.ypos+1,y
+	sta mplexBuffer.xpos+kEntsSpriteOffset,y
+	lda mplexBuffer.ypos+kEntsSpriteOffset,y
 	clc
 	adc CircleJumpTableStart + ( CircleJumpTableCount / 4) + 1,x
-	sta mplexBuffer.ypos+1,y
+	sta mplexBuffer.ypos+kEntsSpriteOffset,y
 	ldx CurrentEntity
 	lda EntityData.entState,x
 	clc
@@ -2588,7 +3006,7 @@ _move
 	sta CollisionResult	
 	lda #2 ; this might change per frame	
 	sta CollideSpriteBoxIndex	
-	inx ; current entity
+	.mConvertXToEntSpriteX ; current entity
 	stx CollideSpriteToCheck	
 	lda #<springEntYCollideEnd
 	sta Pointer1
@@ -2612,10 +3030,10 @@ springEntYCollideEnd
 	bcs _hit
 	; didn't hit so carry on
 	ldx CurrentEntity
-	lda mplexBuffer.ypos+1,x
+	lda mplexBuffer.ypos+kEntsSpriteOffset,x
 	clc
 	adc checkSpriteToCharData.yDeltaCheck
-	sta mplexBuffer.ypos+1,x
+	sta mplexBuffer.ypos+kEntsSpriteOffset,x
 	lda EntityData.entState,x
 	clc
 	adc #1
@@ -2663,9 +3081,9 @@ _noCollideRight
 	jsr collideEntAgainstRest
 	bcs _hit
 	ldx CurrentEntity
-	inx
+	.mConvertXToEntSpriteX
 	jsr addXWithMSBAndClip
-	dex
+	.mRestoreEntSpriteX
 	lda DidClipX
 	beq _noclip
 	lda #256-1
@@ -2690,21 +3108,21 @@ _noCollideLeft
 	jsr collideEntAgainstRest
 	bcs _hit
 	ldx CurrentEntity
-	inx
+	.mConvertXToEntSpriteX
 	jsr addXWithMSBAndClip
-	dex
+	.mRestoreEntSpriteX
 	lda DidClipX
-	beq _noclip
+	beq _noclip2
 	lda #1
-	bpl _store
-_noClip	
+	bpl _store2
+_noClip2	
 	lda EntityData.direction,x 	
 	sec
 	sbc #1
 	cmp #256-5
-	bne _store
+	bne _store2
 	lda #256-4	
-_store	
+_store2	
 	sta EntityData.direction,x
 springEndAnimate
 	ldx CurrentEntity
@@ -2713,7 +3131,7 @@ springEndAnimate
 	cmp #kSinJumpFall
 	bcs _fall
 	lda	SpringFrameFrameTable,y
-	sta mplexBuffer.sprp+1,x
+	sta mplexBuffer.sprp+kEntsSpriteOffset,x
 	jmp nextEnt
 _fall
 	lda #kSprites.springFall
@@ -2729,17 +3147,18 @@ handleEntCollisionResult
 	eor CollisionResultEORForEnt,y	
 	beq _addDeltas
 _entHitAndGoNext
+	.TTX
 	jsr setNextEntDir	
 	jmp nextEnt	
 _addDeltas	
 	jsr collideEntAgainstRest
 	bcs _entHitAndGoNext
 	ldx CurrentEntity	
-	lda mplexBuffer.ypos+1,x	
+	lda mplexBuffer.ypos+kEntsSpriteOffset,x	
 	clc	
 	adc checkSpriteToCharData.yDeltaCheck	
-	sta mplexBuffer.ypos+1,x	
-	inx
+	sta mplexBuffer.ypos+kEntsSpriteOffset,x	
+	.mConvertXToEntSpriteX
 	jsr addXWithMSBAndClip
 	lda DidClipX
 	beq _skipFlipDueToX
@@ -2752,7 +3171,21 @@ _skipFlipDueToX
 nextEnt
 	ldx CurrentEntity	
 	jmp updateEntitiesLoop
-	
+
+entBubble 
+	lda mplexBuffer.ypos+kEntsSpriteOffset,x
+	sec
+	sbc #1
+	cmp #kBounds.screenMinY - 24
+	bne _safe
+	lda #0
+	sta EntityData.active,x
+	lda #$FF
+_safe
+	sta mplexBuffer.ypos+kEntsSpriteOffset,x
+	jsr updateEntAnimAndSetSprite
+	jmp nextEnt ; for now	
+		
 setNextEntDir
 	jsr getEntTableIndex
 	lda NextDirectionLUT,y
@@ -2770,7 +3203,7 @@ setEntFrameForDir
 	sta EntityData.animBase,x
 	clc
 	adc EntityData.animFrame,x
-	sta mplexBuffer.sprp+1,x
+	sta mplexBuffer.sprp+kEntsSpriteOffset,x
 	rts
 getEntTableIndex
 	ldx CurrentEntity
@@ -2800,136 +3233,72 @@ updateEntAnimAndSetSprite
 _dontResetFrames	
 	clc	
 	adc EntityData.animBase,x
-	sta mplexBuffer.sprp+1,x
+	sta mplexBuffer.sprp+kEntsSpriteOffset,x
 _notAnimUpdate 		
 	rts
-
-
-;{{{
-.comment
-SortIndexA .byte ?
-SortIndexB .byte ?
-CollisionTableIndex .byte ?
-CollisionTableLo .fill 16
-CollisionTableHi .fill 16
-SortAY .byte ?
-SortAMSB .byte ?
-ActualIndexA .byte ?
-AcutalIndexB .byte ?
-buildSpriteCollisionTable
-	lda #0	
-	sta SortIndexA	
-	sta CollisionTableIndex
-	lda #1	
-	sta SortIndexB	
-_loopA	
-	ldx SortIndexA	
-	lda mplexZP.sort,x	
-	sta ActualIndexA	
-	tay	
-	lda mplexBuffer.ypos,y	
-	cmp #$ff	
-	beq sortAllDone	
-	sta SortAY	
-_loopB
-	ldx SortIndexB
-	lda mplexZP.sort,x
-	sta AcutalIndexB
-	tay
-	lda mplexBuffer.ypos,y
-	cmp #$ff
-	beq _doneB
-	sec
-	sbc SortAY
-	clc
-	cmp #14
-	bcs _yNotInRange
-	jsr yInRange
-_yNotInRange
-	inc SortIndexB
-	bne _loopB
-_doneB
-	lda SortIndexA
-	clc
-	adc #1
-	sta SortIndexA
-	adc #1
-	sta SortIndexB
-	bne _loopA
-sortAllDone
-	rts
-yInRange
-	ldy ActualIndexA
-	lda mplexBuffer.xpos,y
-	sta SortAY
-	ldy AcutalIndexB
-	lda mplexBuffer.xpos,y
-	sta SortAMSB
-	lda SortAY
-	cmp SortAMSB
-	bcc _x2smaller
-	; x1 is smaller
-	lda SortAY
-	sec
-	sbc SortAMSB
-	cmp #14
-	bcs sortAllDone  ; just returns back to loops above
-	bcc xInRange
-_x2smaller	
-	lda SortAMSB
-	sec
-	sbc SortAY
-	cmp #14
-	bcs sortAllDone  ; just returns back to loops above	
-xInRange
-	ldy CollisionTableIndex
-	lda ActualIndexA
-	sta CollisionTableLo,y
-	lda AcutalIndexB
-	sta CollisionTableHi,y
-	iny
-	sty CollisionTableIndex
-	rts
 	
-didIHitSomething
-	sta ZPTemp
-	ldx CollisionTableIndex
-	beq _no
-	dex ; sub 1 to get first index
-_l	lda CollisionTableLo,x
-	cmp ZPTemp
-	beq _did
-	lda CollisionTableHi,x
-	cmp ZPTemp
-	beq _did
-	dex
-	bpl _l
-_no
-	lda #0
-	rts
-_did
+
+updateBubbles
+	ldx EntityData.numPipes
+	beq _exit
+	lda TickDowns.bubbleTimer
+	bne _exit
+	ldx EntityData.pipeBubbleStart
+_findFreeEnt
+	lda EntityData.active,x
+	beq _foundOne
+	inx
+	cpx EntityData.number
+	bne _findFreeEnt
+	beq _exit
+_foundOne
+	stx ZPTemp2 ; bubble ent number
 	lda #1
-	rts		
-.endc	
-;}}}	
-	
-collidePlayerAgainstRest
-;;	jsr makeMinMaxYForPlayer
-	lda mplexBuffer.ypos
+	sta EntityData.active,x
+	ldy EntityData.lastPipeUsed
+	lda EntityData.pipeIndex,y
+	jsr convertIndexToEntSpriteXY
+	lda #25
+	sta TickDowns.bubbleTimer
+	lda EntityData.lastPipeUsed
 	clc
-	adc CollisionBoxesY
+	adc #1
+	cmp EntityData.numPipes
+	bne _store
+	lda #0
+_store
+	sta EntityData.lastPipeUsed
+_exit
+	rts 
+
+
+
+collideBulletAgainstRest
+	ldy #3
+	ldx #1
+	bne collideAgainstRestEntry
+collidePlayerAgainstRest
+	ldx #0
+	ldy #0
+collideAgainstRestEntry
+;;	jsr makeMinMaxYForPlayer
+	lda mplexBuffer.ypos,x
+	clc
+	adc CollisionBoxesY,y
 	sta Pointer3
 	sta TestingSprY1
 	clc
-	adc CollisionBoxesH
+	adc CollisionBoxesH,y
 	sta Pointer3+1
 	sta TestingSprY2
 ;;	jsr makeMinMaxXForPlayer
-	ldx #0
+	;ldx #0
 	jsr convertXSingleByteEntX
+	clc
+	adc CollisionBoxesX,y
 	sta TestingSprX1
 	clc
-	adc CollisionBoxesW
+	adc CollisionBoxesW,y
 	sta TestingSprX2
 	lda #$FF
 	sta CurrentEntity ; so we don't skip any
@@ -2941,7 +3310,7 @@ collideEntAgainstRest
 	; a hit is if my x1 <= y2 && y1 <= x2
 	; where x1 = my Ent Y, x2 = my Ent Y+Height 
 	; y1 = Other Ent Y, y2 = other Ent Y+Height
-	dec $d020
+;	dec $d020
 	ldx CurrentEntity
 	ldy #0
 	lda EntityData.collisionX1,x
@@ -2960,12 +3329,14 @@ collideEntAgainstRest
 	clc
 	adc checkSpriteToCharData.yDeltaCheck
 	sta TestingSprY2
-	inc $d020
+;	inc $d020
 collideAgainstEntPlayerEntry
-	dec $d020
+;	dec $d020
 	ldy #2 ; other slot
 	ldx #0
 -	cpx CurrentEntity
+	beq Ent_Ent_Coll_skipSelf
+	lda EntityData.active,x
 	beq Ent_Ent_Coll_skipSelf
 	lda #0	
 	sta ZPTemp	
@@ -2982,7 +3353,7 @@ Ent_Ent_Coll_skipSelf
 	inx	
 	cpx EntityData.number	
 	bne -
-	inc $d020
+;	inc $d020
 	clc
 	rts
 	
@@ -3000,7 +3371,7 @@ hitY ; now we need to do the same thing but for the X
 	beq hitX
 	jmp Ent_Ent_Coll_skipSelf
 hitX
-	inc $d020
+;	inc $d020
 	sec
 	rts
 
@@ -3009,16 +3380,20 @@ MakeMinMaxXYForX
 	tay
 	lda CollFrameForEnt,y
 	tay
-	inx ; convert to all sprites not just ents
+	.PXT
+	.PYT
+	.mConvertXToEntSpriteX ; convert to all sprites not just ents
 	jsr convertXSingleByteEntX
-	dex ; convert back
+	.mRestoreEntSpriteX ; convert back
+	.TTX
+	.TTY
 	clc
 	adc CollisionBoxesX,y
 	sta EntityData.collisionX1,x
 	clc
 	adc CollisionBoxesW,y
 	sta EntityData.collisionX2,x
-	lda mplexBuffer.ypos+1,x
+	lda mplexBuffer.ypos+kEntsSpriteOffset,x
 	clc
 	adc CollisionBoxesY,y
 	sta EntityData.collisionY1,x
@@ -3069,9 +3444,9 @@ setirq
 	; build unrolled loop
 	ldx #mplex.kMaxSpr -1
 	stx ZPTemp
-	lda #< mplexBuffer.unrolledCopyLoopDest
+	lda #< mplexCodeBuffer.unrolledCopyLoopDest
 	sta Pointer1
-	lda #> mplexBuffer.unrolledCopyLoopDest
+	lda #> mplexCodeBuffer.unrolledCopyLoopDest
 	sta Pointer1+1
 	ldy #27-1
 -	lda unrolledCopyBase,y	
@@ -3101,7 +3476,7 @@ _copyLoop
 	ldx ZPTemp
 	bpl _copyLoop
 	lda #$60
-	sta mplexBuffer.unrolledCopyLoopDestEnd ; save the rts 
+	sta mplexCodeBuffer.unrolledCopyLoopDestEnd ; save the rts 
 	
 	; copy irq 1 to temp buffer
 	lda #< irqBuffers
@@ -3288,7 +3663,7 @@ swap
 	  inx
 	  beq slop
 end
-		jsr mplexBuffer.unrolledCopyLoopDest
+		jsr mplexCodeBuffer.unrolledCopyLoopDest
 		ldx #$00	 ;find # of used sprites (you can remove sprites by
 		stx mplexZP.sptr	 ;placing #$ff into the ypos buffer for the corresponding
 maxc	lda mplexZP.ybuf,x   ;sprite. It will not be displayed by the raster routine.
@@ -3332,7 +3707,7 @@ maxm	stx mplexZP.mnt
 		sta $d026
 ;	dec $d021
 		jmp eirq
-;{{{		
+; {{{		
 .comment		
 irq1
 		pha			;save registers
@@ -3691,7 +4066,7 @@ ok8		stx mplexZP.sptr
 		jmp eirq
 hlop9 	jmp hlop1
 .endc
-;}}}
+; }}}
 
 done 	lda #<irq0
 		sta $fffe
@@ -3991,9 +4366,95 @@ copyStuff
 		dex	
 		bpl --	
 		rts	
+
+
+PlotTransitionScreenAndMakeNextChars			
+		jsr ClearMapScreenToSolidBlack	
+		ldy #31
+-		lda fileChars+(16*8),y
+		sta fileChars+(84*8),y
+		dey
+		bpl -
+		ldy #3
+-		lda fileCharCols+16,y
+		sta fileCharCols+84,y
+		dey
+		bpl - 
+		lda #kIntermission.firstExit	
+		sta ActiveTileIndex	
+		sta LevelData.playerIndex
+		sta LevelData.exitIndex
+		lda #kDoorOpen
+		jsr pltSingleTileNoLookupNew	
+		lda #kIntermission.secondExit	
+		sta ActiveTileIndex	
+		lda #kDoorClosed	
+		jsr pltSingleTileNoLookupNew				
+		ldx #(kTileXCount/2)-1	
+_firstLoop	
+		txa	
+		pha	
+		inc ActiveTileIndex
+		lda #32
+		jsr pltSingleTileNoLookupNew
+		pla
+		tax
+		dex
+		bpl _firstLoop				
+					
+		jsr incLevelGraphicSet				
+		jsr buildBackAndShadowChars
+		jsr BuildDisolveChars
+		jsr copyFruitChars			
+					
+		ldx #(kTileXCount/2)-1	
+_secondLoop	
+		txa	
+		pha	
+		inc ActiveTileIndex
+		lda #kBlocks.wall
+		jsr pltSingleTileNoLookupNew
+		pla
+		tax
+		dex
+		bpl _secondLoop
 			
-CopyDestLoLUT .byte <fileChars+(44*8),<fileChars+(44*8)    ,<fileChars+(193*8),<fileChars+(193*8)    ,<fileChars+(12*8) ,<fileChars+(40*8)	
-CopyDestHiLUT .byte	>fileChars+(44*8),(>fileChars+(44*8))+1,>fileChars+(193*8),(>fileChars+(193*8))+1,>fileChars+(12*8) ,>fileChars+(40*8)
+		rts		
+				
+ClearMapScreenToSolidBlack			
+		ldx #kTileYCount*2			
+		lda #<kVectors.charBase ; should be 0			
+		sta Pointer1			
+		sta Pointer2			
+		lda #>kVectors.charBase			
+		sta Pointer1+1			
+		lda #$D8			
+		sta Pointer2+1			
+_yloop			
+		ldy #(kTileXCount*2)-1			
+_xloop			
+		lda #192			
+		sta (Pointer1),y					
+		lda #0					
+		sta (Pointer2),y					
+		dey					
+		bpl _xloop					
+		lda Pointer1				
+		clc				
+		adc #40				
+		sta Pointer1				
+		sta Pointer2			
+		lda Pointer1+1				
+		adc #00				
+		sta Pointer1+1				
+		eor # (>kVectors.charBase) ^ $d8				
+		sta Pointer2+1				
+		dex					
+		bpl _yloop					
+		rts					
+							
+CopyDestLoLUT .byte <fileChars+(44*8),<fileChars+(44*8)    ,<fileChars+(192*8),<fileChars+(192*8)    ,<fileChars+(12*8) ,<fileChars+(40*8)	
+CopyDestHiLUT .byte	>fileChars+(44*8),(>fileChars+(44*8))+1,>fileChars+(192*8),(>fileChars+(192*8))+1,>fileChars+(12*8) ,>fileChars+(40*8)
 CopySrcLoLUT  .byte	<LowerFixedChars ,<LowerFixedChars     ,<UpperFixedChars  ,<UpperFixedChars      ,<EmptyDisolveChars,<AppleChars
 CopySrcHiLUT  .byte >LowerFixedChars ,(>LowerFixedChars)+1 ,>UpperFixedChars  ,(>UpperFixedChars)+1  ,>EmptyDisolveChars,>AppleChars	
 CopyBytes	  .byte 000          ,size(LowerFixedChars)-255,000          ,size(UpperFixedChars)-255  ,32				,32
@@ -4065,7 +4526,7 @@ DisolveBlocksANDLUT
 DisolveSourceCharOffsetLUT	.byte 02*8,03*8,08*8,09*8,10*8,12*8, 00*8,01*8,14*8,15*8,16*8,17*8,18*8,19*8,20*8,21*8
 DisolveDestCharOffsetLUT	.byte 08*8,09*8,10*8,11*8,12*8,13*8, 14*8,15*8,16*8,17*8,18*8,19*8,20*8,21*8,22*8,23*8
 DisolveANDORROffsetLUT		.byte 3   ,3   ,5   ,5   ,7   ,8   , 0   ,0   ,0   ,0   ,2   ,2   ,4   ,4   ,6   ,6
-EntitySpriteColours		.byte 4,15,10,14,15,5,3,14
+EntitySpriteColours		.byte 4,15,10,14,15,5,3,14,5
 EntitySpriteStartFrame	.byte kSprBase+32,kSprBase+40,kSprBase+48,kSprBase+56,kSprBase+64,kSprBase+72,kSprBase+80,kSprBase+88
 
 BackCharsLUT .byte 32-1,64-1,96-1,128-1
@@ -4111,14 +4572,15 @@ BaseAnimeFrameForDir
 .byte kSprBase+72,kSprBase+72,kSprBase+72,kSprBase+72 ; spider
 .byte kSprBase+80,kSprBase+80,kSprBase+84,kSprBase+84 ; fish 
 .byte kSprBase+92,kSprBase+92,kSprBase+88,kSprBase+88 ; flying thing 
+.byte kSprBase+120,kSprBase+120,kSprBase+120,kSprBase+120 ; bubble
 FrameCountForEnt
-.byte 008,004,004,004,004,002,004,004
+.byte 008,004,004,004,004,002,004,004,003
 CollFrameForEnt
-.byte 000,000,000,001,000,000,000,000
+.byte 000,000,000,001,000,000,000,000,003
 CollisionResultEORForEnt
-.byte 000,000,000,001,000,000,000,000
+.byte 000,000,000,001,000,000,000,000,000
 AnimFrameTimerForEnt
-.byte 008,002,008,008,008,008,001,002
+.byte 008,002,008,008,008,008,001,002,012
 SpringDirectionToDeltaLUT
 .char -2,-1,-1,-1,01,01,01,02 
 SinJumpTable
@@ -4199,15 +4661,18 @@ FruitColourLut
 .byte 3+8,3+8,4+8,4+8 ; sphere
 PackedSprites .binary "sprites_small.bin"
 
-fileCharCols ;		
+fileCharCols ;@@ENDROM ; @@RAM		
 .binary "testattribs.raw"	
 fileTiles ;		
 .binary "tiledefs.raw",0,32*4
+.byte 84,85,86,87
 * = fileTiles + (33*4)
 .byte 06,05,10,03
 
+FILE_END 
 
 *= $4000
+VIC_START 
 fileScreen ;
 ;*= $4400
 ;fileCharCols ;		
@@ -4224,9 +4689,45 @@ fileChars ;
 *= $5000
 fileSprites ;
 ;.binary "sprites.bin"		
+* = $6FC0	
+LevelTableLo	
+.byte <fileTileMap,<Level02,<Level03,<Level04,<Level05,<Level06,<Level07,<Level08,<Level09,<Level10,<Level11,<Level12,<Level13,<Level14,<Level15,<Level16,<Level17,<Level18,<Level19,<Level20,<Level21,<Level22,<Level23,<Level24,<Level25,<Level26,<Level27,<Level28,<Level29,<Level30	
+LevelTableHi	
+.byte >fileTileMap,>Level02,>Level03,>Level04,>Level05,>Level06,>Level07,>Level08,>Level09,>Level10,>Level11,>Level12,>Level13,>Level14,>Level15,>Level16,>Level17,>Level18,>Level19,>Level20,>Level21,>Level22,>Level23,>Level24,>Level25,>Level26,>Level27,>Level28,>Level29,>Level30	
 * = $7000		
+VIC_END ; @@ENDRAM	
 fileTileMap; 
-.binary "testmap.raw"
+.binary "levels/01.bin"
+Level02 .binary "levels/02.bin"
+Level03 .binary "levels/03.bin"
+Level04 .binary "levels/04.bin"
+Level05 .binary "levels/04boss01.bin"
+Level06 .binary "levels/05.bin"
+Level07 .binary "levels/06.bin"
+Level08 .binary "levels/07.bin"
+Level09 .binary "levels/08.bin"
+Level10 .binary "levels/08boss02.bin"
+Level11 .binary "levels/09.bin"
+Level12 .binary "levels/10.bin"
+Level13 .binary "levels/11.bin"
+Level14 .binary "levels/12.bin"
+Level15 .binary "levels/12boss03.bin"
+Level16 .binary "levels/13.bin"
+Level17 .binary "levels/14.bin"
+Level18 .binary "levels/15.bin"
+Level19 .binary "levels/16.bin"
+Level20 .binary "levels/16boss04.bin"
+Level21 .binary "levels/17.bin"
+Level22 .binary "levels/18.bin"
+Level23 .binary "levels/19.bin"
+Level24 .binary "levels/20.bin"
+Level25 .binary "levels/20boss05.bin"
+Level26 .binary "levels/21.bin"
+Level27 .binary "levels/22.bin"
+Level28 .binary "levels/23.bin"
+Level29 .binary "levels/24.bin"
+Level30 .binary "levels/24boss06.bin"
+
 ; to pack
 ; exomizer.exe sfx sys -o qwak_ex.prg qwak.prg
 	

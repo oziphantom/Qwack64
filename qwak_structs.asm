@@ -11,7 +11,7 @@ sLevelData .struct
 numKeys .byte ?
 totalKeys .byte ?
 playerIndex .byte ?
-exitIndex .byte ?
+exitIndex .byte ?,?
 exitFrame .byte ?
 levelGraphicsSet .byte ?
 .ends
@@ -20,6 +20,8 @@ sTimerTickDowns .struct
 dissBlocks 	.byte ?
 playerAnim 	.byte ?
 doorAnim	.byte ?
+bulletLifeTimer .byte ?
+bubbleTimer .fill kEntity.maxBubbleMakers 
 .ends
 
 sPlayerData .struct
@@ -41,23 +43,32 @@ movingLR .byte ?
 currAnim .byte ?
 state .byte ?
 minorState .byte ?
+bulletActive .byte ?
+bulletUD .byte ?
+bulletLR .byte ?
+exitAtIndex .byte ?
 .ends
 
 sEntityData .struct
 number		.byte ?
-type		.fill 31 ; .byte ?,?,?,?,?,?,?
-direction	.fill 31 ;.byte ?,?,?,?,?,?,?
-active		.fill 31 ;.byte ?,?,?,?,?,?,?
-movTimer	.fill 31 ;.byte ?,?,?,?,?,?,?
-animTimer	.fill 31 ;.byte ?,?,?,?,?,?,?
-animBase 	.fill 31
-animFrame	.fill 31
-originalY	.fill 31 ;.byte ?,?,?,?,?,?,?
-entState	.fill 31 ;.byte ?,?,?,?,?,?,?
-collisionX1 .fill 31
-collisionX2 .fill 31
-collisionY1 .fill 31
-collisionY2 .fill 31
+type		.fill kEntity.maxEntities 
+direction	.fill kEntity.maxEntities 
+active		.fill kEntity.maxEntities 
+movTimer	.fill kEntity.maxEntities 
+animTimer	.fill kEntity.maxEntities 
+animBase 	.fill kEntity.maxEntities
+animFrame	.fill kEntity.maxEntities
+originalY	.fill kEntity.maxEntities 
+entState	.fill kEntity.maxEntities 
+collisionX1 .fill kEntity.maxEntities
+collisionX2 .fill kEntity.maxEntities
+collisionY1 .fill kEntity.maxEntities
+collisionY2 .fill kEntity.maxEntities
+speed		.fill kEntity.maxEntities
+numPipes	.byte ?
+pipeIndex 	.fill kEntity.maxBubbleMakers
+lastPipeUsed .byte ?
+pipeBubbleStart .byte ?
 .ends
 
 sCSTCCParams .struct	
@@ -86,6 +97,8 @@ xpos .fill mplex.kMaxSpr+1		;sprite x position frame buffer
 xmsb .fill mplex.kMaxSpr+1		;sprite x msb frame buffer
 sprc .fill mplex.kMaxSpr+1		;sprite color frame buffer
 sprp .fill mplex.kMaxSpr+1		;sprite pointer frame buffer
+.ends
+sMplexCodeBuffers .struct
 unrolledCopyLoopDest .fill 837 	;this is where the unrolled loop sits
 unrolledCopyLoopDestEnd .byte ? ;837 = size + 1 for rts
 .ends
