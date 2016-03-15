@@ -53,12 +53,48 @@ INR .macro
 .endif
 
 ;----------------------------
+; FONT encoding
+;----------------------------
+;.comment
+.enc qwak ;define an ascii->petscii encoding
+.cdef "@@", 128
+.cdef "AZ", 129
+.cdef "[[", 155
+.cdef "££", 156
+.cdef "]]", 157
+.cdef "^^", 158
+.cdef "||", 159;->
+.cdef "  ", 160
+.cdef "!!", 161
+.cdef "``", 162;"
+.cdef "##", 163
+.cdef "~~", 164 ;heart
+.cdef "%%", 165
+.cdef "&&", 166
+.cdef "''", 167
+.cdef "((", 168
+.cdef "))", 169
+.cdef "**", 170
+.cdef "++", 171
+.cdef ",,", 172
+.cdef "--", 173
+.cdef "..", 174
+.cdef "//", 175
+.cdef "09", 176
+.cdef "::", 186
+.cdef ";;", 187
+.cdef "<<", 188
+.cdef "==", 189
+.cdef ">>", 190
+.cdef "??", 191
+;.endc
+;----------------------------
 ; Constants Regeion
 ;----------------------------
 kTileXCount = 16
 kTileYCount = 12
 kLevelSizeMax = kTileXCount*kTileYCount
-kSprBase = 64
+kSprBase = 128-8
 kBulletSpriteOffset = 1
 kEntsSpriteOffset = 2
 kBulletCollisionbox = 2
@@ -71,6 +107,7 @@ kSprites .block
 	springExpand = kSprBase+42
 	springFull = kSprBase+43
 	springFall = kSprBase+44
+	bubbles = kSprBase+124
 	bulletSprite = kSprBase+121
 .bend
 kSpiderValues .block
@@ -83,7 +120,7 @@ kSpiderValues .block
 	riseDelayTime = 4
 .bend
 kVectors .block
-	charBase = $4000
+	charBase = $C000
 	spr0ID = charBase+1016
 	spr1ID = charBase+1017
 	spr2ID = charBase+1018
@@ -348,13 +385,13 @@ MAP_TEMP_STORE_END ; @@ENDRAM
 ; Unpacked Code section
 ;----------------------------
 
-* = $c000
+* = $6000
 mplexBuffer     .dstruct sMplexBuffer ;@@RAM
 mplexCodeBuffer .dstruct sMplexCodeBuffers ;@@ENDRAM @@RAMEX
 irqBuffers .fill irqLength * 8 
 irqBuffEnd ;@@ENDRAMEX 
 
-.cerror * > $D000, "Too much Unpacked Code"
+.cerror * > $7000, "Too much Unpacked Code"
 ;---------------------------
 ; MACROS
 ;---------------------------
@@ -383,24 +420,24 @@ mRestoreEntSpriteX .macro
 	dex
 .endm
 
-
+.enc screen
 *= $0801 ; 00 0C 08 0A 00 9E 20 32 30 36 34 00 00
 CODE_START ;@@ROM
 	.word (+), 2005 ;pointer, line number
 	.null $9e, ^start;will be sys 4096
 +	.word 0	 ;basic line end
 	
-	
+.enc qwak	
 	
 *= $0810
 start
 		jsr setirq ; clear all interupts and put out own in
 		lda $dd02
-		ora #2
+		ora #3
 		sta $dd02
 		lda $dd00
 		and #252
-		ora #2
+		;ora #3 0
 		sta $dd00
 		lda #%00000010
 		sta $d018
@@ -671,6 +708,24 @@ _exit
 interNextLevel
 	jmp MAINLOOP
 	
+;----------------------------			
+; GAME OVER LOOP		
+;----------------------------	
+gameOverLoop
+	ldx PlayerData.state
+	mCallFunctionTable GameOverFuncLUT,x
+GameOverFuncLUT mMakeFunctionTable GOSetup,GOWaitForFire
+
+GoSetup
+	; print string
+	; remove sprites
+	; go to GOSetup
+
+GOWaitForFire
+	;wait for fire
+		; got to Title Screen State
+		
+		
 addXWithMSBAndClip		
 	stx ZPTemp2
 	lda mplexBuffer.xmsb,x
@@ -1927,7 +1982,7 @@ CSTCCY
 _startFall
 	lda #1	
 	sta PlayerData.isFalling	
-	lda #0
+	lda #2
 	sta PlayerData.yDeltaAccum
 	sta PlayerData.yDeltaAccum+1
 	rts	
@@ -1943,9 +1998,11 @@ _checkDown
 	lda ZPTemp3
 	ora ZPTemp4
 	bne _onGround
+	ldx PlayerData.onGround
 	lda #0
 	sta PlayerData.onGround
-;	beq _startFall
+	cpx #1
+	beq _startFall
 _exit 
 	rts
 	
@@ -2739,8 +2796,10 @@ ENTDirectionCheckFuncLUT .mMakeFunctionTable entRight,entUp,entLeft,entDown
 ;ENTDirectionCheckFuncLUTLo .byte <entRight-1,<entUp-1,<entLeft-1,<entDown-1	
 ;ENTDirectionCheckFuncLUTHi .byte >entRight-1,>entUp-1,>entLeft-1,>entDown-1	
 	
-entPositiveTBL .byte 001,002
-entNegativeTBL .byte 255,254
+entPositiveTBL   .byte 002,004
+entPositiveTBLUD .byte 001,002
+entNegativeTBL   .byte 254,252
+entNegativeTBLUD .byte 255,254
 
 entRight	
 	lda entPositiveTBL,y	
@@ -2760,7 +2819,7 @@ entRightNoDelta
 entUp	
 	lda #$00	
 	sta checkSpriteToCharData.xDeltaCheck
-	lda entNegativeTBL,y
+	lda entNegativeTBLUD,y
 	sta checkSpriteToCharData.yDeltaCheck	
 entUpNoDelta
 	jsr newCollision
@@ -2790,7 +2849,7 @@ entLeftNoDelta
 entDown	
 	lda #$00	
 	sta checkSpriteToCharData.xDeltaCheck
-	lda entPositiveTBL,y
+	lda entPositiveTBLUD,y
 	sta checkSpriteToCharData.yDeltaCheck
 entDownNoDelta
 	jsr newCollision
@@ -4248,6 +4307,21 @@ copyFruitChars
 		rts
 
 unpackSprites	
+		sei
+		lda #$34
+		sta $01 ; hide IO
+		lda #>fileSprites
+		sta _loop+2		
+		lda #0		
+_loop2	ldx #0		
+_loop	sta fileSprites,x
+		dex
+		bne _loop
+		inc _loop+2
+		ldx _loop+2
+		cpx #>fileSprites+$2000
+		bne _loop2
+		 
 		lda #<fileSprites	
 		sta Pointer1	
 		lda #>fileSprites	
@@ -4272,7 +4346,7 @@ spriteUnpackLook
 		bne copy16x21Sprite
 nextSpriteUnpack
 		lda ZPTemp3
-		cmp #(15*8)/4
+		cmp #((15*8)/4)+1
 		beq _endPatchUp
 		dec Pointer3
 		bpl spriteUnpackLook
@@ -4280,7 +4354,7 @@ nextSpriteUnpack
 		sta Pointer3
 		inc ZPTemp3
 		lda ZPTemp3
-		cmp #(15*8)/4
+		cmp #((15*8)/4)+1
 		bne spriteUnpackLook
 _endPatchUp		
 		lda Pointer4		
@@ -4288,7 +4362,10 @@ _endPatchUp
 		lsr Pointer4		
 		bcc copyFullSprite		
 		bcs copy16x16Sprite		
-_exit	rts		
+_exit	lda #$35 ; bring IO back
+		sta $01
+		cli
+		rts		
 			
 advancePonterXByZPTemp	
 		clc	
@@ -4453,11 +4530,11 @@ _xloop
 		bpl _yloop					
 		rts					
 							
-CopyDestLoLUT .byte <fileChars+(44*8),<fileChars+(44*8)    ,<fileChars+(192*8),<fileChars+(192*8)    ,<fileChars+(12*8) ,<fileChars+(40*8)	
-CopyDestHiLUT .byte	>fileChars+(44*8),(>fileChars+(44*8))+1,>fileChars+(192*8),(>fileChars+(192*8))+1,>fileChars+(12*8) ,>fileChars+(40*8)
-CopySrcLoLUT  .byte	<LowerFixedChars ,<LowerFixedChars     ,<UpperFixedChars  ,<UpperFixedChars      ,<EmptyDisolveChars,<AppleChars
-CopySrcHiLUT  .byte >LowerFixedChars ,(>LowerFixedChars)+1 ,>UpperFixedChars  ,(>UpperFixedChars)+1  ,>EmptyDisolveChars,>AppleChars	
-CopyBytes	  .byte 000          ,size(LowerFixedChars)-255,000          ,size(UpperFixedChars)-255  ,32				,32
+CopyDestLoLUT .byte <fileChars+(44*8),<fileChars+(44*8)    ,<fileChars+(192*8),<fileChars+(192*8)    ,<fileChars+(12*8) ,<fileChars+(40*8),<fileChars+$400  ,<fileChars+$500
+CopyDestHiLUT .byte	>fileChars+(44*8),(>fileChars+(44*8))+1,>fileChars+(192*8),(>fileChars+(192*8))+1,>fileChars+(12*8) ,>fileChars+(40*8),>fileChars+$400  ,>fileChars+$500
+CopySrcLoLUT  .byte	<LowerFixedChars ,<LowerFixedChars     ,<UpperFixedChars  ,<UpperFixedChars      ,<EmptyDisolveChars,<AppleChars	  ,<fileFont   		,<fileFont+$100	 
+CopySrcHiLUT  .byte >LowerFixedChars ,(>LowerFixedChars)+1 ,>UpperFixedChars  ,(>UpperFixedChars)+1  ,>EmptyDisolveChars,>AppleChars	  ,>fileFont   		,>fileFont+$100 
+CopyBytes	  .byte 000          ,size(LowerFixedChars)-255,000          ,size(UpperFixedChars)-255  ,32				,32				  ,000				,000
 				
 ShadowTileLUT    .byte 0,1,0,0,0,0,2,0		
 ShadowTilePatLUT .byte 0,1,5,1,6,3,4,4		
@@ -4546,6 +4623,7 @@ SpriteUnpackTBL
 .byte 0,0
 .byte 0,0
 .byte 0,0
+.byte 1
 ;.byte 0,0,0,1
 
 IndexToORLUT	.byte 1,2,4,8,16,32,64,128
@@ -4572,7 +4650,7 @@ BaseAnimeFrameForDir
 .byte kSprBase+72,kSprBase+72,kSprBase+72,kSprBase+72 ; spider
 .byte kSprBase+80,kSprBase+80,kSprBase+84,kSprBase+84 ; fish 
 .byte kSprBase+92,kSprBase+92,kSprBase+88,kSprBase+88 ; flying thing 
-.byte kSprBase+120,kSprBase+120,kSprBase+120,kSprBase+120 ; bubble
+.byte kSprBase+124,kSprBase+124,kSprBase+124,kSprBase+124 ; bubble
 FrameCountForEnt
 .byte 008,004,004,004,004,002,004,004,003
 CollFrameForEnt
@@ -4668,10 +4746,11 @@ fileTiles ;
 .byte 84,85,86,87
 * = fileTiles + (33*4)
 .byte 06,05,10,03
-
+fileFont ;
+.binary "font.raw"
 FILE_END 
 
-*= $4000
+*= $C000
 VIC_START 
 fileScreen ;
 ;*= $4400
@@ -4682,19 +4761,19 @@ fileScreen ;
 ;.binary "tiledefs.raw",32*4	; needs to be 80 bytes
 ;* = $4500 + (33*4)
 ;.byte 06,05,10,03
-*= $4800
+*= $C800
 fileChars ;
 ;.fill 88+(24*8)
 ;.binary "testchars.raw",88+(24*8)
-*= $5000
+*= $E000-(8*64)
 fileSprites ;
 ;.binary "sprites.bin"		
-* = $6FC0	
+* = $77C0	
 LevelTableLo	
 .byte <fileTileMap,<Level02,<Level03,<Level04,<Level05,<Level06,<Level07,<Level08,<Level09,<Level10,<Level11,<Level12,<Level13,<Level14,<Level15,<Level16,<Level17,<Level18,<Level19,<Level20,<Level21,<Level22,<Level23,<Level24,<Level25,<Level26,<Level27,<Level28,<Level29,<Level30	
 LevelTableHi	
 .byte >fileTileMap,>Level02,>Level03,>Level04,>Level05,>Level06,>Level07,>Level08,>Level09,>Level10,>Level11,>Level12,>Level13,>Level14,>Level15,>Level16,>Level17,>Level18,>Level19,>Level20,>Level21,>Level22,>Level23,>Level24,>Level25,>Level26,>Level27,>Level28,>Level29,>Level30	
-* = $7000		
+* = $7800		
 VIC_END ; @@ENDRAM	
 fileTileMap; 
 .binary "levels/01.bin"
