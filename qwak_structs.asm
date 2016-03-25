@@ -21,6 +21,8 @@ dissBlocks 	.byte ?
 playerAnim 	.byte ?
 doorAnim	.byte ?
 bulletLifeTimer .byte ?
+shieldFlashTimer .byte ?
+shieldFlashTimerSpeedUp .byte ?
 bubbleTimer .fill kEntity.maxBubbleMakers 
 .ends
 
@@ -40,13 +42,20 @@ frameOffset .byte ?
 frameCount .byte ?
 frameTimer .byte ?
 movingLR .byte ?
+startedJumpLR .byte ?
+slowMove	.byte ?
 currAnim .byte ?
 state .byte ?
 minorState .byte ?
 bulletActive .byte ?
 bulletUD .byte ?
 bulletLR .byte ?
+bulletBurst .byte ?
+bulletEgg	.byte ?
 exitAtIndex .byte ?
+hitBubbleNum .byte ?
+forceJump .byte ?
+baseFlashTimeDelta .byte ?
 .ends
 
 sEntityData .struct
