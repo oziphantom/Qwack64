@@ -1,7 +1,8 @@
 ;----------------------------
 ; TEST DEFINES
 ;----------------------------
-.if BDD==1
+
+.if BDD=1
 
 PAT .macro 
 	.byte $02
@@ -259,7 +260,10 @@ kIntermission .block
 	firstExit = kTileXCount*5
 	secondExit = (kTileXCount*6)-1
 .bend
-
+kHideScreen .block
+	hide = %11101111
+	show = %11111111
+.bend
 .include "qwak_structs.asm"
 
 ;----------------------------
@@ -271,17 +275,17 @@ kIntermission .block
 ZP_START ;@@RAM
 .byte ?,? ; 00.01 
 mplexZP .dstruct sMplexZP
-LevelTileMapPtrLo .byte ?
-LevelTileMapPtrHi .byte ?
-LevelKeyListPtrLo .byte ?
-LevelKeyListPtrHi .byte ?
+;LevelTileMapPtrLo .byte ?
+;LevelTileMapPtrHi .byte ?
+;LevelKeyListPtrLo .byte ?
+;LevelKeyListPtrHi .byte ?
 
-CollCharX	.byte ?
-CollCharY	.byte ?
-CollTileX	.byte ?
-CollTileY	.byte ?
-CollTLX		.byte ?
-CollTLY		.byte ?
+;CollCharX	.byte ?
+;CollCharY	.byte ?
+;CollTileX	.byte ?
+;CollTileY	.byte ?
+;CollTLX		.byte ?
+;CollTLY		.byte ?
 
 EntityDataPointer	.word ?
 CurrentEntity		.byte ?
@@ -306,6 +310,28 @@ TestingSprX2		.byte ?
 TestingSprY1		.byte ?
 TestingSprY2		.byte ?
 GameStatePointer	.word ?
+
+checkSpriteToCharData .dstruct sCSTCCParams 
+CollideSpriteToCheck .byte ?
+CollideSpriteBoxIndex .byte ?
+CollideCharTLI .byte ?
+CollideCharTLC .byte ?
+CollideCharTRI .byte ?
+CollideCharTRC .byte ?
+CollideCharBLI .byte ?
+CollideCharBLC .byte ?
+CollideCharBRI .byte ?
+CollideCharBRC .byte ?
+CollideInternalSprTLX .byte ?  ; these 4 MUST be in the same order as below
+CollideInternalSprBRX .byte ?
+CollideInternalSprTLY .byte ?
+CollideInternalSprBRY .byte ?
+CollideInternalTTLX .byte ?
+CollideInternalTBRX .byte ?
+CollideInternalTTLY .byte ?
+CollideInternalTBRY .byte ?
+DidClipX			.byte ?  ; this is if the add X with MSB function did clip the Y
+HideScreen			.byte ?
 ZP_END ; @@ENDRAM
 
 .cerror * > $FF, "Too many ZP variables"
@@ -345,46 +371,26 @@ TICK_DOWN_START = *
 TickDowns .dstruct sTimerTickDowns
 TICK_DOWN_END = *
 
-playerTile1			.byte ?
-playerTile2			.byte ?
-playerMidTile		.byte ?
-playerMidBelowTile	.byte ?
-playerMidBelowOtherTile .byte ?
+;playerTile1			.byte ?
+;playerTile2			.byte ?
+;playerMidTile		.byte ?
+;playerMidBelowTile	.byte ?
+;playerMidBelowOtherTile .byte ?
 
-playerTile1X		.byte ?
-playerTile2X		.byte ?
-playerMidTileX		.byte ?
-playerMidBelowTileX .byte ?
-playerMidBelowOtherTileX .byte ?
+;playerTile1X		.byte ?
+;playerTile2X		.byte ?
+;playerMidTileX		.byte ?
+;playerMidBelowTileX .byte ?
+;playerMidBelowOtherTileX .byte ?
 
-playerTile1Y		.byte ?
-playerTile2Y		.byte ?
-playerMidTileY		.byte ?
-playerMidBelowTileY .byte ?
-playerMidBelowOtherTileY .byte ?
+;playerTile1Y		.byte ?
+;playerTile2Y		.byte ?
+;playerMidTileY		.byte ?
+;playerMidBelowTileY .byte ?
+;playerMidBelowOtherTileY .byte ?
 
 EntityData .dstruct sEntityData
 
-checkSpriteToCharData .dstruct sCSTCCParams 
-CollideSpriteToCheck .byte ?
-CollideSpriteBoxIndex .byte ?
-CollideCharTLI .byte ?
-CollideCharTLC .byte ?
-CollideCharTRI .byte ?
-CollideCharTRC .byte ?
-CollideCharBLI .byte ?
-CollideCharBLC .byte ?
-CollideCharBRI .byte ?
-CollideCharBRC .byte ?
-CollideInternalSprTLX .byte ?  ; these 4 MUST be in the same order as below
-CollideInternalSprBRX .byte ?
-CollideInternalSprTLY .byte ?
-CollideInternalSprBRY .byte ?
-CollideInternalTTLX .byte ?
-CollideInternalTBRX .byte ?
-CollideInternalTTLY .byte ?
-CollideInternalTBRY .byte ?
-DidClipX			.byte ?  ; this is if the add X with MSB function did clip the Y
 
 ;.warn "Size of variables = ", *-variables
 VARIABLES_END ;@@ENDRAM
@@ -454,6 +460,8 @@ CODE_START ;@@ROM
 *= $0810
 start
 		jsr setirq ; clear all interupts and put out own in
+		lda #kHideScreen.hide
+		sta HideScreen
 		lda $dd02
 		ora #3
 		sta $dd02
@@ -463,8 +471,6 @@ start
 		sta $dd00
 		lda #%00000010
 		sta $d018
-		lda #%00011000
-		sta $d016
 		;lda #%00010000
 		;sta $d011
 		jsr copyStuff
@@ -491,6 +497,8 @@ start
 		
 		lda #1
 		sta GameData.high
+		lda #$C0
+		sta GameData.musicMode
 .if BDD=0		
 		; main loop
 MAINLOOP
@@ -528,6 +536,8 @@ PlayerAppear
 		sta PlayerData.state
 		lda #0
 		sta GameData.exitOpen
+		lda #kHideScreen.show
+		sta HideScreen
 		jmp MAINLOOP
 		
 PlayerNormal
@@ -589,6 +599,7 @@ _skipDeathCheck
 		jsr joyToPlayerDelta
 		jsr checkSpriteToCharCollision
 		; level skip
+.if CRT == 0 
 		lda joyUp
 		and joyDown
 		beq +
@@ -597,7 +608,9 @@ _skipDeathCheck
 		lda #0
 		sta PlayerData.minorState
 		jmp MAINLOOP
-+		lda checkSpriteToCharData.xDeltaCheck
++		
+.endif
+		lda checkSpriteToCharData.xDeltaCheck
 		beq _addY
 		;make sure x reg is 0, and call addXWithMSBAndClip
 		ldx #0
@@ -617,7 +630,7 @@ _addY
 		sta mplexBuffer.sprc
 		lda TickDowns.shieldFlashTimerSpeedUp
 		bne +
-		lda #50
+		lda #35
 		sta TickDowns.shieldFlashTimerSpeedUp
 		dec PlayerData.baseFlashTimeDelta
 +		lda PlayerData.baseFlashTimeDelta
@@ -753,6 +766,8 @@ interMovePlayer
 	jsr setAnimateDoorToOpen		
 	lda #kIntermission.secondExit
 	sta LevelData.exitIndex
+	lda #kSFX.door
+	jsr playSFX
 +	jmp MAINLOOP
 		
 interEnterDoor	
@@ -770,7 +785,7 @@ interEnterDoor
 	.byte $2c ; BIT XXXXX
 _bossLevel
 	lda #3
-	jsr SID
+	jsr playMusic
 	lda #kPlayerState.appear
 	sta PlayerData.state
 	lda #<GAMELOOP
@@ -800,7 +815,7 @@ GoSetup
 	; remove sprites
 	jsr disableAllEntSprites
 	lda #4
-	jsr SID
+	jsr playMusic
 	; check to see if this is the new high score
 	ldx #0
 _l	lda GameData.score,x
@@ -837,10 +852,17 @@ GOWaitForFire
 		; got to Title Screen State
 	lda #kPlayerState.appear
 	sta PlayerData.state
+.if CRT==0	
 	lda #<GAMELOOP
 	sta GameStatePointer
 	lda #>GAMELOOP
 	sta GameStatePointer+1
+.else
+	lda #<titleScreenLoop
+	sta GameStatePointer
+	lda #>titleScreenLoop
+	sta GameStatePointer+1
+.endif
 _exit	
 	jmp MAINLOOP
 
@@ -883,19 +905,81 @@ _l2	lda TitleScreenData.spriteY
 	bpl _l2
 	lda #$FF
 	sta $D01C
+	lda #%00001000
+	sta $d016
 	inc PlayerData.state
 	lda #0
-	jsr SID
+	sta ZPTemp2
+	jsr playMusic
+	lda #kHideScreen.show
+	sta HideScreen
 	jmp MAINLOOP
 	
 TSWaitForFire		
-;inc $d020		
-	
-;dec $d020
-	jsr scanJoystick
+	jsr scanJoystick	
+	jsr updateTickdowns	
+	lda TickDowns.playerAnim	
+	bne _noScroll	
+	ldx ZPTemp2	
+	lda GameData.musicMode
+	clc
+	rol a
+	rol a
+	rol a
+	tay
+	lda TitleScreenData.menuOffsetsEnd,y
+	sta ZPTemp
+	lda TitleScreenData.menuOffsetsStart,y
+	tay		
+-	lda TitleScreenData.spriteCol,x	
+	sta $d800+(11*80),y
+	txa	
+	clc	
+	adc #1	
+	and #3	
+	tax	
+	iny	
+	cpy ZPTemp	
+	bne -	
+	stx ZPTemp2
+	lda #4
+	sta TickDowns.playerAnim
+	lda joyRight
+	beq _notLeft
+	lda GameData.musicMode
+	sec
+	sbc #64
+_saveNoMode
+	and #128+64
+	sta GameData.musicMode
+	lda #1
+	ldy #38
+-	sta $d800+(11*80),y
+	dey
+	bpl -
+	bit GameData.musicMode
+	bpl _startMusic
+	lda #0
+	.byte $2c
+_startMusic
+	lda #5
+	jsr SID
+	jmp _noScroll
+_notLeft	
+	lda joyLeft	
+	beq _noScroll	
+	lda GameData.musicMode
+	clc
+	adc #64	
+	jmp _saveNoMode
+_noScroll	
 	lda joyFire
 	beq _exit	
+	lda oldJoyFire
+	bne _exit
 	inc PlayerData.state	
+	lda #kHideScreen.hide
+	sta HideScreen
 _exit	
 	jmp MAINLOOP	
 	
@@ -909,6 +993,8 @@ TSStartGame
 	lda #1
 	sta $d023	
 	sta $d015
+	lda #%00011000
+	sta $d016
 	lda #kSprBase
 	sta mplexBuffer.sprp
 	lda #255
@@ -942,7 +1028,7 @@ RESET
 	lda #0
 	sta GameData.currLevel	
 	lda #1
-	jsr SID
+	jsr playMusic
 	jmp MAINLOOP	
 	
 	
@@ -1485,6 +1571,8 @@ hurtBoss
 	lda EntityData.entState,x
 	cmp #kBoss.dead
 	beq _exit
+	lda EntityData.movTimer+1,x
+	bne _exit
 	dec EntityData.active,x
 	lda EntityData.active,x
 	cmp #1
@@ -1492,7 +1580,7 @@ hurtBoss
 	; we need to flash them so the player knows they did something
 	lda #01
 	jsr setBossSpriteToColour
-	lda #4
+	lda #16
 	sta EntityData.movTimer+1,x ; store the flash timer in the 2nd sprite
 _exit
 	rts
@@ -1568,10 +1656,10 @@ convertLevelToTileMap
 		sta LevelData.exitIndex+1
 		lda #<tileMapTemp
 		sta Pointer1
-		sta LevelTileMapPtrLo
+		;sta LevelTileMapPtrLo
 		lda #>tileMapTemp
 		sta Pointer1+1
-		sta LevelTileMapPtrHi
+		;sta LevelTileMapPtrHi
 		ldx GameData.currLevel
 		lda LevelTableLo,x
 		sta Pointer2
@@ -1580,14 +1668,14 @@ convertLevelToTileMap
 ; read level pointers
 		ldy #0
 		sty ActiveTileIndex
-		lda (Pointer2),y
-		clc
-		adc Pointer2
-		sta LevelKeyListPtrLo
+		;lda (Pointer2),y
+		;clc
+		;adc Pointer2
+		;sta LevelKeyListPtrLo
 		iny
-		lda (Pointer2),y
-		adc Pointer2+1
-		sta LevelKeyListPtrHi
+		;lda (Pointer2),y
+		;adc Pointer2+1
+		;sta LevelKeyListPtrHi
 		iny
 		lda (Pointer2),y
 		clc
@@ -2614,6 +2702,8 @@ setAnimateDoorToClose
 	rts
 	
 playSFX
+	bit GameData.musicMode
+	bvc audioExit
 	lda SNDTBL.hi,x
 	tay
 	lda SNDTBL.lo,x
@@ -2622,6 +2712,13 @@ playSFX
     ;ldy #>effect
     ;ldx #channel        ;0, 7 or 14 for channels 1-3
     jmp SID+6
+audioExit
+	rts
+	
+playMusic
+	bit GameData.musicMode
+	bpl audioExit
+	jmp SID
 	
 countTempMapTile
 	ldx # kLevelSizeMax-1
@@ -2637,6 +2734,7 @@ _skip
 	tya
 	rts
 	
+.comment
 collTileXYtoIndex
 	lda CollTileY
 	asl a
@@ -2651,7 +2749,7 @@ readTileMapTemp
 	tax
 	lda tileMapTemp,x
 	rts
-	
+.endc 	
 clearTileNew
 	ldy ActiveTileIndex
 	lda # kTiles.back
@@ -3108,6 +3206,9 @@ _sharedBoss
 	lda (EntityDataPointer),y
 	and #3
 	sta EntityData.direction,x	
+	lda #25
+	sta EntityData.movTimer,x
+	sta EntityData.movTimer+1,x
 	inx
 	inx
 	inx
@@ -3914,6 +4015,10 @@ _foundOne
 	ldy EntityData.lastPipeUsed
 	lda EntityData.pipeIndex,y
 	jsr convertIndexToEntSpriteXY
+	lda mplexBuffer.xpos+kEntsSpriteOffset,x
+	sec
+	sbc #4
+	sta mplexBuffer.xpos+kEntsSpriteOffset,x
 	lda #kTimers.spawnBubble
 	sta TickDowns.bubbleTimer
 	lda EntityData.lastPipeUsed
@@ -4245,9 +4350,6 @@ setirq
 	sta $d01a		 ;turn on raster irq.
 	lda #$35
 	sta $01		 ;no basic or kernal
-	lda $dc0d		 ;acknowledge any irq that has occured during setup.
-	lda $dd0d
-	inc $d019
 	lda # <start
 	sta $fffc
 	lda # >start
@@ -4295,7 +4397,7 @@ _copyLoop
 	
 	; copy irq 1 to temp buffer
 	lda #< irqBuffers
-	sta Pointer1
+	sta Pointer1 
 	lda #> irqBuffers
 	sta Pointer1+1
 	ldy # irqLength -1
@@ -4344,6 +4446,9 @@ irqloop
 	dex
 	bpl - 
 	
+	lda $dc0d		 ;acknowledge any irq that has occured during setup.
+	lda $dd0d
+	inc $d019
 	cli			 ;clear interrupt disable
 	rts			 ;return from subroutine
 unrolledCopyBase
@@ -4513,13 +4618,16 @@ maxm	stx mplexZP.mnt
 		lda #$28
 		sta $d012
 +		lda #%00011011  ; turn the screen on
+		and HideScreen
 		sta $d011
 		lda #11
 		sta $d025
 		lda #1
 		sta $d026
+		lda GameData.musicMode
+		beq +
 		jsr SID+3
-		jmp eirq
++		jmp eirq
 
 done 	lda #<irq0
 		sta $fffe
@@ -5118,15 +5226,20 @@ screenRowLUTHi
 .next
 
 TitleScreenData .block
-string .byte kStrings.original,kStrings.c64port,kStrings.program,kStrings.art
-	   .byte kStrings.music,kStrings.specialThanks,kStrings.soci,kStrings.martinPiper
-index  .byte 3*16+1			  ,4*16+2		   ,5*16+5			,6*16+5
-	   .byte 7*16+5		   ,8*16+5				  ,9*16+8       ,10*16+6
+string .byte kStrings.original,kStrings.c64port,kStrings.program,kStrings.art,kStrings.saul
+	   .byte kStrings.music,kStrings.saul,kStrings.specialThanks,kStrings.soci,kStrings.martinPiper
+	   .byte kStrings.both,kStrings.music,kStrings.sfx,kStrings.none
+index  .byte 3*16+1			  ,4*16+2		   ,5*16+5			,6*16+5		,6*16+8
+	   .byte 7*16+5		   ,7*16+8			,8*16+5				  ,9*16+8       ,10*16+6
+	   .byte 11*16+2,11*16+6,11*16+10,11*16+14
 	
 spriteY 	.byte 60
 spriteX 	.byte 101+15,136+15,171+15,206+15
 spriteDef 	.byte kSprites.Q,kSprites.W,kSprites.A,kSprites.K
 spriteCol	.byte 7,13,14,10
+
+menuOffsetsStart	.byte 26,18,11,3
+menuOffsetsEnd		.byte 33,25,18,10
 .bend
 
 kStrings .block 
@@ -5139,10 +5252,14 @@ music = 5
 specialThanks = 6
 soci = 7
 martinPiper = 8
+saul = 9
+sfx = 10
+none = 11
+both = 12
 .bend
 
-StringTableLUTLo .byte <GAMEOVER,<ORIGINAL,<C64PORT,<PROGRAM,<ART,<MUSIC,<SPECIALTHANKS,<SOCI,<MARTINPIPER
-StringTableLUTHi .byte >GAMEOVER,>ORIGINAL,>C64PORT,>PROGRAM,>ART,>MUSIC,>SPECIALTHANKS,>SOCI,>MARTINPIPER
+StringTableLUTLo .byte <GAMEOVER,<ORIGINAL,<C64PORT,<PROGRAM,<ART,<MUSIC,<SPECIALTHANKS,<SOCI,<MARTINPIPER,<SAUL,<SFX,<NONE,<BOTH
+StringTableLUTHi .byte >GAMEOVER,>ORIGINAL,>C64PORT,>PROGRAM,>ART,>MUSIC,>SPECIALTHANKS,>SOCI,>MARTINPIPER,>SAUL,>SFX,>NONE,>BOTH
 
 GAMEOVER 		.text "GAME OVER"
 		 		.byte $FF
@@ -5152,9 +5269,17 @@ C64PORT  		.text "PORTED TO THE COMMODORE 64 BY"
 				.byte $FF		
 PROGRAM	 		.text "CODE  : OZIPHANTOM"		
 				.byte $FF		
-ART		 		.text "ART   : SAUL CROSS"		
+ART		 		.text "ART"		
 				.byte $FF		
-MUSIC 	 		.text "MUSIC : SAUL CROSS"		
+SAUL			.text ": SAUL CROSS"		
+				.byte $FF		
+MUSIC 	 		.text "MUSIC"		
+				.byte $FF		
+SFX				.text "SFX"		
+				.byte $FF		
+NONE			.text "NONE"		
+				.byte $FF		
+BOTH			.text "BOTH"		
 				.byte $FF		
 SPECIALTHANKS 	.text "SPECIAL THANKS TO"		
 				.byte $FF		

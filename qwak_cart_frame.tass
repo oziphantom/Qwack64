@@ -1,0 +1,11 @@
+D:\GitHub\Qwack64\qwak_cart_frame.asm:20:1: loop1 = $8026
+<command line>:2:1: CRT = 1
+D:\GitHub\Qwack64\qwak_cart_frame.asm:46:1: starter_end = $804f
+D:\GitHub\Qwack64\qwak_cart_frame.asm:47:1: exomized_data = $804f
+D:\GitHub\Qwack64\qwak_cart_frame.asm:31:1: loop = $0104
+D:\GitHub\Qwack64\qwak_cart_frame.asm:18:1: move_starter = $8024
+D:\GitHub\Qwack64\qwak_cart_frame.asm:34:1: dst = $0107
+D:\GitHub\Qwack64\qwak_cart_frame.asm:32:1: src = $0104
+<command line>:1:1: BDD = 0
+D:\GitHub\Qwack64\qwak_cart_frame.asm:5:1: launcher = $8009
+D:\GitHub\Qwack64\qwak_cart_frame.asm:27:1: starter_start = $8032
