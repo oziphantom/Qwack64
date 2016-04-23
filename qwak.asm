@@ -744,7 +744,13 @@ interSetUp
 	lda #0
 	jsr changePlayerDir
 	jsr setAnimateDoorToClose
-	inc GameData.currLevel
+	lda GameData.currLevel
+	clc
+	adc #1
+	cmp #31
+	bne +
+	lda #0
++ 	sta GameData.currLevel
 	jsr deactivateAllEntities
 	jsr removePickups
 	jmp MAINLOOP
@@ -1436,6 +1442,8 @@ burstBullet
 	sta TickDowns.bulletLifeTimer
 	lda #1
 	sta PlayerData.bulletBurst
+	ldx #kSFX.ebubble
+	jsr playSFX
 	rts
 bulletNotDead	
 	lda PlayerData.bulletBurst
@@ -1925,7 +1933,7 @@ BCDELUT	.byte $00							; 0000
 		.byte kTiles.shadowOpenCorner		; 1010
 		.byte kTiles.sideShadow				; 1011			
 		.byte kTiles.underHang				; 1100				
-		.byte kTiles.shadowOpenCorner		; 1101				
+		.byte kTiles.topLeftCorner		; 1101				
 		.byte kTiles.underHang				; 1110				
 		.byte kTiles.topLeftCorner			; 1111				
 								
@@ -2707,7 +2715,7 @@ playSFX
 	lda SNDTBL.hi,x
 	tay
 	lda SNDTBL.lo,x
-	ldx #14
+	ldx #14;7;14
 	;lda #<effect        ;Start address of sound effect data
     ;ldy #>effect
     ;ldx #channel        ;0, 7 or 14 for channels 1-3
@@ -2943,12 +2951,12 @@ _checkNotShadow
 	
 plotStatusArea
 	lda #<kVectors.charBase + 32 
-	sta $fb
-	sta $fd
+	sta Pointer1
+	sta Pointer2
 	lda #>kVectors.charBase + 32 
-	sta $fc
+	sta Pointer1+1
 	eor # (>kVectors.charBase) ^ $d8
-	sta $fe
+	sta Pointer2+1
 	lda #0
 	sta ZPTemp
 _loop
@@ -2961,23 +2969,23 @@ _loop
 	ldy #0
 _lineLoop	
 	lda statusLine0,x
-	sta ($fb),y
+	sta (Pointer1),y
 	lda statusColour0,x
-	sta ($fd),y
+	sta (Pointer2),y
 	inx
 	iny
 	cpy #8
 	bcc _lineLoop
 	clc
-	lda $fb
+	lda Pointer1
 	adc #40
-	sta $fb
-	sta $fd
-	lda $fc
+	sta Pointer1
+	sta Pointer2
+	lda Pointer1+1
 	adc #00
-	sta $fc
+	sta Pointer1+1
 	eor # (>kVectors.charBase) ^ $d8
-	sta $fe
+	sta Pointer2+1
 	lda ZPTemp
 	clc
 	adc #1
@@ -4029,8 +4037,6 @@ _foundOne
 	lda #0
 _store
 	sta EntityData.lastPipeUsed
-	ldx #kSFX.ebubble
-	jsr playSFX
 _exit
 	rts 
 
@@ -5359,9 +5365,9 @@ fileSprites ;
 ;.binary "sprites.bin"		
 * = $77C0	
 LevelTableLo	
-.byte <fileTileMap,<Level02,<Level03,<Level04,<Level05,<Level06,<Level07,<Level08,<Level09,<Level10,<Level11,<Level12,<Level13,<Level14,<Level15,<Level16,<Level17,<Level18,<Level19,<Level20,<Level21,<Level22,<Level23,<Level24,<Level25,<Level26,<Level27,<Level28,<Level29,<Level30	
+.byte <fileTileMap,<Level02,<Level03,<Level04,<Level05,<Level06,<Level07,<Level08,<Level09,<Level10,<Level11,<Level12,<Level13,<Level14,<Level15,<Level16,<Level17,<Level18,<Level19,<Level20,<Level21,<Level22,<Level23,<Level24,<Level25,<Level26,<Level27,<Level28,<Level29,<Level30,<Level31	
 LevelTableHi	
-.byte >fileTileMap,>Level02,>Level03,>Level04,>Level05,>Level06,>Level07,>Level08,>Level09,>Level10,>Level11,>Level12,>Level13,>Level14,>Level15,>Level16,>Level17,>Level18,>Level19,>Level20,>Level21,>Level22,>Level23,>Level24,>Level25,>Level26,>Level27,>Level28,>Level29,>Level30	
+.byte >fileTileMap,>Level02,>Level03,>Level04,>Level05,>Level06,>Level07,>Level08,>Level09,>Level10,>Level11,>Level12,>Level13,>Level14,>Level15,>Level16,>Level17,>Level18,>Level19,>Level20,>Level21,>Level22,>Level23,>Level24,>Level25,>Level26,>Level27,>Level28,>Level29,>Level30,>Level31	
 * = $7800		
 VIC_END ; @@ENDRAM	
 fileTileMap; 
@@ -5395,7 +5401,7 @@ Level27 .binary "levels/22.bin"
 Level28 .binary "levels/23.bin"
 Level29 .binary "levels/24.bin"
 Level30 .binary "levels/24boss06.bin"
-
+Level31 .binary "levels/end.bin"
 * = $a000
 SID .binary "QWAK.sid",126
 ; SFX
