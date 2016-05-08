@@ -139,8 +139,8 @@ kVectors .block
 kBounds .block
 	screenMinX = 24
 	screenMinY = 50
-	screenMaxX = 24 + ( kTileXCount * 8 )
-	screenMaxY = 50 + ( kTileYCount * 8 )
+	screenMaxX = 24 + ( kTileXCount * 16 )
+	screenMaxY = 50 + ( kTileYCount * 16 )
 .bend
 kTimers .block
 	dissBlocksValue = $8
@@ -3575,6 +3575,7 @@ spiderFall
 	lda CollideCharBLC
 	jsr checkSolidTile
 	bcc _noColide
+_collide
 	lda #2
 	ldx CurrentEntity
 	sta EntityData.entState,x
@@ -3582,11 +3583,10 @@ spiderFall
 	sta EntityData.movTimer,x
 	jmp nextEnt
 _noColide
-;	ldx CurrentEntity
-;	lda mplexBuffer.ypos+kEntsSpriteOffset,x
-;	clc
-;	adc #kSpiderValues.yFallDelta
-;	sta mplexBuffer.ypos+kEntsSpriteOffset,x
+	ldx CurrentEntity
+	lda mplexBuffer.ypos+kEntsSpriteOffset,x
+	cmp #kBounds.screenMaxY-21
+	bcs _collide
 	jsr addYDeltaEnt
 	jmp nextEnt
 		
