@@ -334,7 +334,7 @@ DidClipX			.byte ?  ; this is if the add X with MSB function did clip the Y
 HideScreen			.byte ?
 ZP_END ; @@ENDRAM
 
-.cerror * > $FF, "Too many ZP variables"
+.cerror * > $FB, "Too many ZP variables"
 
 ;----------------------------
 ; Dumy Stack Regeion
@@ -858,17 +858,18 @@ GOWaitForFire
 		; got to Title Screen State
 	lda #kPlayerState.appear
 	sta PlayerData.state
-.if CRT==0	
-	lda #<GAMELOOP
-	sta GameStatePointer
-	lda #>GAMELOOP
-	sta GameStatePointer+1
-.else
+;.if CRT==0	
+;	lda #<GAMELOOP
+;	sta GameStatePointer
+;	lda #>GAMELOOP
+;	sta GameStatePointer+1
+;.else
 	lda #<titleScreenLoop
 	sta GameStatePointer
 	lda #>titleScreenLoop
 	sta GameStatePointer+1
-.endif
+	jsr clearAllEntities
+;.endif
 _exit	
 	jmp MAINLOOP
 
@@ -887,6 +888,7 @@ TSSetup
 	lda #0
 	sta $d020
 	sta $d021 
+	sta LevelData.levelGraphicsSet
 	lda #TitleScreenData.index-TitleScreenData.string-1
 	sta ZPTemp
 _l	ldy ZPTemp
@@ -1011,6 +1013,9 @@ TSStartGame
 	sta GameStatePointer
 	lda #>GAMELOOP
 	sta GameStatePointer+1
+	jsr buildBackAndShadowChars
+	jsr BuildDisolveChars
+	jsr copyFruitChars
 RESET		
 	jsr clearPlayerStuct
 	jsr clearAllSprites
@@ -1087,8 +1092,8 @@ _storeX
 	lda #24
 	bne _storeX2
 _XClipInMSB	
-	cmp #8	
-	bcc _storeX2	
+	cmp #9 ; make the bcc <= 8	
+	bcc _storeX2		
 	inc DidClipX	
 	lda #8		
 _storeX2
@@ -1627,6 +1632,19 @@ disableAllEntSprites
 -	sta mplexBuffer.ypos,x
 	dex
 	bne -
+	rts
+	
+clearAllEntities
+	lda #0
+	sta EntityData.number
+	sta EntityData.numPipes
+	sta EntityData.lastPipeUsed
+	ldx #kEntity.maxEntities 
+-	sta EntityData.type,x
+	sta EntityData.active,x
+	sta EntityData.entState,x
+	dex
+	bpl -
 	rts
 	
 emptyCRAM
@@ -2786,29 +2804,6 @@ _loop
 	cmp ZPTemp5
 	bne _next
 	jsr clearTileNew
-;	lda ActiveTileIndex
-;	sta Pointer4
-;	inc ActiveTileIndex
-;	ldy ActiveTileIndex
-;	cpy #kLevelSizeMax
-;	beq _next
-;	jsr tileIsSafeToChange
-;	bcc _skipLeft
-;	jsr clearTileNew	
-;_skipLeft	
-;	lda ActiveTileIndex
-;	clc
-;	adc #15 ; it is + 1 already
-;	cmp #kLevelSizeMax
-;	beq _restoreACI
-;	sta ActiveTileIndex
-;	tay
-;	jsr tileIsSafeToChange
-;	bcc _restoreACI
-;	jsr clearTileNew
-;_restoreACI
-;	lda Pointer4
-;	sta ActiveTileIndex
 	jsr CheckForShadowPlots
 _next	
 	inc TestingSprX1
@@ -3624,10 +3619,39 @@ _cirActive
 	lda EntityData.entState,x
 	ldy CurrentEntity
 	tax
+	lda CircleJumpTableStart,x
+	sta checkSpriteToCharData.xDeltaCheck
+	; add X with MSB offset
 	lda mplexBuffer.xpos+kEntsSpriteOffset,y
 	clc
-	adc CircleJumpTableStart,x
-	sta mplexBuffer.xpos+kEntsSpriteOffset,y
+	adc checkSpriteToCharData.xDeltaCheck
+	sta ZPTemp
+	; xdelta +ve if this is +ve but original was -ve we have gone over
+	lda checkSpriteToCharData.xDeltaCheck
+	bmi _subbedX
+	lda mplexBuffer.xpos+kEntsSpriteOffset,y
+	bpl _loadX 
+	; so last pos in negative >80
+	lda ZPTemp
+	bmi _storeX
+	; new pos is positive 0-80
+	lda #0			; enable MSB
+	sta mplexBuffer.xmsb+kEntsSpriteOffset,y
+	jmp _storeX
+_subbedX
+	; xdelta -ve if this is -ve but original was +ve we have gone over
+	lda mplexBuffer.xpos+kEntsSpriteOffset,y
+	bmi _loadX
+	; last post is positive >80
+	lda ZPTemp
+	bpl _storeX		
+	lda #1			; clear MSB
+	sta mplexBuffer.xmsb+kEntsSpriteOffset,y
+_loadX
+_storeX	
+	lda ZPTemp	
+	sta mplexBuffer.xpos+kEntsSpriteOffset,y	
+
 	lda mplexBuffer.ypos+kEntsSpriteOffset,y
 	clc
 	adc CircleJumpTableStart + ( CircleJumpTableCount / 4) + 1,x
