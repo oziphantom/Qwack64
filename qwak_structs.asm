@@ -75,6 +75,7 @@ collisionX2 .fill kEntity.maxEntities
 collisionY1 .fill kEntity.maxEntities
 collisionY2 .fill kEntity.maxEntities
 speed		.fill kEntity.maxEntities
+ignoreColl	.fill kEntity.maxEntities
 numPipes	.byte ?
 pipeIndex 	.fill kEntity.maxBubbleMakers
 lastPipeUsed .byte ?
